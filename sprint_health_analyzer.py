@@ -458,7 +458,7 @@ def fetch_sprint_issues(sprint_id, jira_url, jira_user, jira_token):
                 desc_text = json.dumps(desc_text)
             desc_text = desc_text[:500]
 
-            # Check for AC in description
+            # Check for acceptance criteria in description
             has_ac_in_desc = bool(desc_text and re.search(
                 r'acceptance\s*criteria|definition\s*of\s*done|done\s*when|acceptance\s*test',
                 desc_text, re.IGNORECASE
@@ -953,18 +953,15 @@ def compute_metrics(items, enrichment=None):
     m['oldest_item'] = max(items, key=lambda i: i['age_days']) if items else None
 
     # --- AC coverage ---
-    # Check both dedicated AC field and AC embedded in description.
-    # If no items use a dedicated AC field (common in Cloud instances),
-    # use AC-in-description as the primary metric.
+    # Acceptance criteria are typically documented in the issue description.
+    # Count items that have AC in either a dedicated field or the description.
     ac_field_count = sum(1 for i in items if i['has_ac'])
     ac_desc_count = sum(1 for i in items if i['has_ac_in_desc'])
     ac_any_count = sum(1 for i in items if i['has_ac'] or i['has_ac_in_desc'])
-    has_ac_field = ac_field_count > 0
-    m['ac_field_count'] = ac_any_count  # Use combined count for KPIs
+    m['ac_field_count'] = ac_any_count
     m['ac_field_rate'] = ac_any_count / n
     m['ac_desc_count'] = ac_desc_count
     m['ac_any_count'] = ac_any_count
-    m['ac_source'] = 'field' if has_ac_field else 'description'
 
     # --- Priority coverage ---
     priority_defined = sum(1 for i in items if i['priority_defined'])
@@ -3355,7 +3352,7 @@ def generate_html(team_name, sprint_name, sprint_num, items, metrics, antipatter
     <div class="dimension-body">
       <h4>Observations</h4>
       <ul>
-        <li><strong>AC coverage:</strong> {m['ac_field_count']}/{m['total_items']} items have acceptance criteria (detected in description).{f" {m['ac_desc_count']} items embed AC keywords." if m['ac_desc_count'] > 0 and m['ac_source'] == 'field' else ""}</li>
+        <li><strong>AC coverage:</strong> {m['ac_field_count']}/{m['total_items']} items have acceptance criteria.</li>
         <li><strong>Priority coverage:</strong> {m['priority_defined_count']}/{m['total_items']} items have defined priority ({m['priority_defined_rate']:.0%}).</li>
         <li><strong>Issue types:</strong> {", ".join(f"{k} ({v})" for k, v in sorted(m['type_distribution'].items(), key=lambda x: -x[1]))}</li>
       </ul>
