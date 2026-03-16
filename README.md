@@ -26,30 +26,31 @@ The analyzer produces an **HTML report** (and a Markdown version) with:
   - [Download Python](https://www.python.org/downloads/) if needed
 - No additional packages or installs required
 
-### Step 1: Export Your Sprint Data from Jira
+### Step 1: Run the Analyzer
 
-1. Open your Jira board
-2. Navigate to the **Backlog** or **Active Sprint** view
-3. Click the **...** menu (top right) > **Export** > **CSV (All fields)**
-4. Save the downloaded CSV file
-
-### Step 2: Run the Analyzer
-
-**Option A: Interactive mode (recommended for first-time users)**
+**Interactive mode (recommended for first-time users):**
 
 ```bash
 ./analyze_sprint.sh
 ```
 
-The script will walk you through each step with prompts.
+The script will walk you through each step, starting with choosing your data source:
 
-You can also pass your CSV file directly:
+```
+Step 1: How would you like to provide sprint data?
 
-```bash
-./analyze_sprint.sh path/to/your-sprint-export.csv
+  1) Jira CSV export file  (export from Jira board)
+  2) Jira Sprint ID        (fetch directly from Jira API)
+  3) MCP JSON file         (output from Jira MCP tools)
+
+Choose [1/2/3]:
 ```
 
-**Option B: Direct command**
+**Or use direct commands for each input mode:**
+
+**Mode 1 -- Jira CSV export**
+
+Export from Jira (Board > **...** menu > **Export** > **CSV All fields**), then:
 
 ```bash
 python3 sprint_health_analyzer.py \
@@ -59,7 +60,34 @@ python3 sprint_health_analyzer.py \
   --output ./reports
 ```
 
-### Step 3: View the Report
+**Mode 2 -- Jira Sprint ID (fetches directly from Jira API)**
+
+Requires Jira credentials (set as environment variables or passed as flags):
+
+```bash
+export JIRA_URL=https://your-jira-instance.atlassian.net
+export JIRA_USER=your-email@company.com
+export JIRA_TOKEN=your-api-token
+
+python3 sprint_health_analyzer.py \
+  --sprintid 12345 \
+  --team "Your Team Name" \
+  --output ./reports
+```
+
+**Mode 3 -- MCP JSON (output from Jira MCP tools)**
+
+If you use Jira MCP tools (e.g., `jira_get_sprint_issues` or `jira_search`), save the JSON output to a file:
+
+```bash
+python3 sprint_health_analyzer.py \
+  --jira-json "mcp_output.json" \
+  --sprint "Sprint NN" \
+  --team "Your Team Name" \
+  --output ./reports
+```
+
+### Step 2: View the Report
 
 Open the generated HTML file in your browser:
 
@@ -77,26 +105,16 @@ reports/S{NN}_Health_Report.html
 | Jira MCP JSON | `--jira-json FILE` | JSON output from Jira MCP tools |
 | Jira API | `--sprintid ID` | Fetch directly from Jira (requires credentials) |
 
-### Using Jira API Credentials (optional)
+### Jira API Tokens
 
-To fetch sprint data directly from Jira without exporting CSV:
+To use Mode 2 (Sprint ID), you need a Jira API token: [Atlassian API Tokens](https://id.atlassian.com/manage-profile/security/api-tokens)
 
-```bash
-export JIRA_URL=https://your-jira-instance.atlassian.net
-export JIRA_USER=your-email@company.com
-export JIRA_TOKEN=your-api-token
-
-python3 sprint_health_analyzer.py --sprintid 12345 --output ./reports
-```
-
-To generate an API token: [Atlassian API Tokens](https://id.atlassian.com/manage-profile/security/api-tokens)
-
-Setting `JIRA_URL` also makes issue keys in the report clickable links to Jira. You can set it even when using CSV mode:
+Setting `JIRA_URL` (via env var or `--jira-url` flag) also makes issue keys in the report clickable links to Jira. This works with any input mode:
 
 ```bash
 python3 sprint_health_analyzer.py \
   --csv sprint.csv \
-  --sprint "Sprint 27" \
+  --sprint "Sprint NN" \
   --team "My Team" \
   --jira-url https://your-jira-instance.atlassian.net
 ```
