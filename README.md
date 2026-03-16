@@ -54,7 +54,7 @@ You can also pass your CSV file directly:
 ```bash
 python3 sprint_health_analyzer.py \
   --csv "your-sprint-export.csv" \
-  --sprint "Sprint 27" \
+  --sprint "Sprint NN" \
   --team "Your Team Name" \
   --output ./reports
 ```
@@ -64,7 +64,7 @@ python3 sprint_health_analyzer.py \
 Open the generated HTML file in your browser:
 
 ```
-reports/S27_Health_Report.html
+reports/S{NN}_Health_Report.html
 ```
 
 ---
