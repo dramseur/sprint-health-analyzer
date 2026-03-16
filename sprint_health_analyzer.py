@@ -953,12 +953,18 @@ def compute_metrics(items, enrichment=None):
     m['oldest_item'] = max(items, key=lambda i: i['age_days']) if items else None
 
     # --- AC coverage ---
-    ac_count = sum(1 for i in items if i['has_ac'])
+    # Check both dedicated AC field and AC embedded in description.
+    # If no items use a dedicated AC field (common in Cloud instances),
+    # use AC-in-description as the primary metric.
+    ac_field_count = sum(1 for i in items if i['has_ac'])
     ac_desc_count = sum(1 for i in items if i['has_ac_in_desc'])
-    m['ac_field_count'] = ac_count
-    m['ac_field_rate'] = ac_count / n
+    ac_any_count = sum(1 for i in items if i['has_ac'] or i['has_ac_in_desc'])
+    has_ac_field = ac_field_count > 0
+    m['ac_field_count'] = ac_any_count  # Use combined count for KPIs
+    m['ac_field_rate'] = ac_any_count / n
     m['ac_desc_count'] = ac_desc_count
-    m['ac_any_count'] = sum(1 for i in items if i['has_ac'] or i['has_ac_in_desc'])
+    m['ac_any_count'] = ac_any_count
+    m['ac_source'] = 'field' if has_ac_field else 'description'
 
     # --- Priority coverage ---
     priority_defined = sum(1 for i in items if i['priority_defined'])
@@ -1331,8 +1337,7 @@ def generate_markdown(team_name, sprint_name, sprint_num, items, metrics, antipa
         w(f"2. **{len(m['zombies'])} zombie items detected** -- " + "; ".join(zombie_strs) + ".")
 
     if m['ac_field_rate'] < 0.5:
-        w(f"{'3' if m['zombies'] else '2'}. **Low acceptance criteria coverage** -- {m['ac_field_count']}/{m['total_items']} items have AC in the AC field." +
-          (f" {m['ac_desc_count']} items embed AC in their description." if m['ac_desc_count'] > 0 else ""))
+        w(f"{'3' if m['zombies'] else '2'}. **Low acceptance criteria coverage** -- {m['ac_field_count']}/{m['total_items']} items have acceptance criteria.")
 
     if m['blocked_items']:
         blocked_strs = [f"{b['key']} (blocked by {', '.join(b['blockers'][:2])})" for b in m['blocked_items'][:3]]
@@ -1564,8 +1569,7 @@ def generate_markdown(team_name, sprint_name, sprint_num, items, metrics, antipa
     w("### 3.7 Backlog Health")
     w()
     w("**Observations:**")
-    w(f"- **AC field coverage:** {m['ac_field_count']}/{m['total_items']} items have acceptance criteria in the AC field." +
-      (f" {m['ac_desc_count']} items embed AC in their description." if m['ac_desc_count'] > 0 else ""))
+    w(f"- **AC coverage:** {m['ac_field_count']}/{m['total_items']} items have acceptance criteria.")
     w(f"- **Priority coverage:** {m['priority_defined_count']}/{m['total_items']} items have defined priority ({m['priority_defined_rate']:.0%}).")
     if m['priority_distribution']:
         w(f"  - Distribution: " + ", ".join(f"{k}: {v}" for k, v in sorted(m['priority_distribution'].items(), key=lambda x: -x[1])))
@@ -1646,7 +1650,7 @@ def generate_markdown(team_name, sprint_name, sprint_num, items, metrics, antipa
     w()
     issue_num = 1
     if m['ac_field_rate'] < 0.5:
-        w(f"{issue_num}. **Low acceptance criteria coverage** -- {m['ac_field_count']}/{m['total_items']} items use the AC field.")
+        w(f"{issue_num}. **Low acceptance criteria coverage** -- {m['ac_field_count']}/{m['total_items']} items have acceptance criteria.")
         issue_num += 1
     if m['priority_defined_rate'] < 0.5:
         w(f"{issue_num}. **Priority field underused** -- {100 - m['priority_defined_rate']*100:.0f}% of items have 'Undefined' priority.")
@@ -2951,7 +2955,7 @@ def generate_html(team_name, sprint_name, sprint_num, items, metrics, antipatter
       <button class="kpi-info-btn" onclick="toggleKpiDetail('ac-coverage')" title="What does this mean?">i</button>
       <div class="kpi-value">{m['ac_field_count']}/{m['total_items']}</div>
       <div class="kpi-label">Acceptance Criteria</div>
-      <div class="kpi-sub">AC field coverage</div>
+      <div class="kpi-sub">AC coverage</div>
     </div>
     <div class="kpi-card {'warn' if m['max_age'] > 90 else 'neutral'}" data-kpi="oldest-item">
       <button class="kpi-info-btn" onclick="toggleKpiDetail('oldest-item')" title="What does this mean?">i</button>
@@ -3134,8 +3138,8 @@ def generate_html(team_name, sprint_name, sprint_num, items, metrics, antipatter
     # AC gap
     if m['ac_field_rate'] < 0.5:
         html += f'''      <tr>
-        <td><strong>Universal AC gap</strong></td>
-        <td>{m['ac_field_count']}/{m['total_items']} items have acceptance criteria in the AC field{f". {m['ac_desc_count']} items embed AC in description." if m['ac_desc_count'] > 0 else "."}</td>
+        <td><strong>Low AC coverage</strong></td>
+        <td>{m['ac_field_count']}/{m['total_items']} items have acceptance criteria.</td>
         <td>No objective standard for "done"; completion depends on verbal agreement</td>
       </tr>
 '''
@@ -3351,7 +3355,7 @@ def generate_html(team_name, sprint_name, sprint_num, items, metrics, antipatter
     <div class="dimension-body">
       <h4>Observations</h4>
       <ul>
-        <li><strong>AC field coverage:</strong> {m['ac_field_count']}/{m['total_items']} items have acceptance criteria in the AC field.{f" {m['ac_desc_count']} items embed AC in their description." if m['ac_desc_count'] > 0 else ""}</li>
+        <li><strong>AC coverage:</strong> {m['ac_field_count']}/{m['total_items']} items have acceptance criteria (detected in description).{f" {m['ac_desc_count']} items embed AC keywords." if m['ac_desc_count'] > 0 and m['ac_source'] == 'field' else ""}</li>
         <li><strong>Priority coverage:</strong> {m['priority_defined_count']}/{m['total_items']} items have defined priority ({m['priority_defined_rate']:.0%}).</li>
         <li><strong>Issue types:</strong> {", ".join(f"{k} ({v})" for k, v in sorted(m['type_distribution'].items(), key=lambda x: -x[1]))}</li>
       </ul>
@@ -3490,7 +3494,7 @@ def generate_html(team_name, sprint_name, sprint_num, items, metrics, antipatter
   <ol>
 '''
     if m['ac_field_rate'] < 0.5:
-        html += f'    <li><strong>Low acceptance criteria coverage</strong> &mdash; {m["ac_field_count"]}/{m["total_items"]} items use the AC field.</li>\n'
+        html += f'    <li><strong>Low acceptance criteria coverage</strong> &mdash; {m["ac_field_count"]}/{m["total_items"]} items have acceptance criteria.</li>\n'
     if m['priority_defined_rate'] < 0.5:
         html += f'    <li><strong>Priority field underused</strong> &mdash; {100 - m["priority_defined_rate"]*100:.0f}% of items have &lsquo;Undefined&rsquo; priority.</li>\n'
     if len(m['type_distribution']) <= 2:
