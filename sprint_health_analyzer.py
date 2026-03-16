@@ -406,8 +406,10 @@ def fetch_sprint_issues(sprint_id, jira_url, jira_user, jira_token):
             f"{base}/rest/agile/1.0/sprint/{sprint_id}/issue"
             f"?startAt={start_at}&maxResults={max_results}"
             f"&fields=summary,issuetype,status,priority,assignee,reporter,"
-            f"created,updated,resolutiondate,description,customfield_12310243,"
-            f"customfield_12310040,labels,issuelinks"
+            f"created,updated,resolutiondate,description,"
+            f"customfield_10028,customfield_10020,customfield_10011,"
+            f"customfield_10016,customfield_10004,"
+            f"labels,issuelinks,parent"
         )
         data = jira_api_get(issues_url, jira_user, jira_token)
         issues = data.get('issues', [])
@@ -419,11 +421,10 @@ def fetch_sprint_issues(sprint_id, jira_url, jira_user, jira_token):
             created_dt = parse_date(fields.get('created', ''))
             resolved_dt = parse_date(fields.get('resolutiondate', ''))
 
-            # Story points -- try common custom fields
+            # Story points -- try Cloud field IDs (customfield_10028 is Red Hat Cloud)
             points_val = None
-            for sp_field in ['customfield_12310243', 'customfield_12310040',
-                             'customfield_10016', 'customfield_10004',
-                             'story_points']:
+            for sp_field in ['customfield_10028', 'customfield_10016',
+                             'customfield_10004', 'story_points']:
                 sp = fields.get(sp_field)
                 if sp is not None:
                     try:
@@ -463,16 +464,23 @@ def fetch_sprint_issues(sprint_id, jira_url, jira_user, jira_token):
                 desc_text, re.IGNORECASE
             ))
 
-            # Sprint labels from sprint field
-            sprint_fields = fields.get('sprint', {})
-            sprints_raw = [sprint_name]
-            # Also check closedSprints for multi-sprint history
-            closed_sprints = fields.get('closedSprints', [])
-            if isinstance(closed_sprints, list):
-                for cs in closed_sprints:
-                    cs_name = cs.get('name', '') if isinstance(cs, dict) else str(cs)
-                    if cs_name and cs_name != sprint_name:
-                        sprints_raw.insert(0, cs_name)
+            # Sprint history -- customfield_10020 (Cloud), fallback to Agile API fields
+            sprints_raw = []
+            sprint_field_data = fields.get('customfield_10020')
+            if sprint_field_data and isinstance(sprint_field_data, list):
+                for s in sprint_field_data:
+                    s_name = s.get('name', '') if isinstance(s, dict) else str(s)
+                    if s_name:
+                        sprints_raw.append(s_name)
+            if not sprints_raw:
+                # Fallback: Agile API sprint/closedSprints fields
+                sprints_raw = [sprint_name]
+                closed_sprints = fields.get('closedSprints', [])
+                if isinstance(closed_sprints, list):
+                    for cs in closed_sprints:
+                        cs_name = cs.get('name', '') if isinstance(cs, dict) else str(cs)
+                        if cs_name and cs_name != sprint_name:
+                            sprints_raw.insert(0, cs_name)
             sprint_labels = [extract_sprint_number(s) for s in sprints_raw]
 
             # Issue links -- blockers and clones
