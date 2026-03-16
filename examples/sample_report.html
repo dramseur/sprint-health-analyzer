@@ -1,0 +1,1883 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>S27 Health Report - Training Kubeflow</title>
+<style>
+  :root {
+    --risk-high: #dc2626;
+    --risk-moderate: #f59e0b;
+    --risk-healthy: #16a34a;
+    --accent: #2563eb;
+    --accent-light: #dbeafe;
+    --positive: #16a34a;
+    --positive-bg: #dcfce7;
+    --warn: #f59e0b;
+    --warn-bg: #fef3c7;
+    --danger: #dc2626;
+    --danger-bg: #fee2e2;
+    --neutral: #6b7280;
+    --neutral-bg: #f3f4f6;
+    --bg: #ffffff;
+    --bg-alt: #f9fafb;
+    --border: #e5e7eb;
+    --text: #111827;
+    --text-secondary: #4b5563;
+    --text-muted: #9ca3af;
+    --font: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+    --mono: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: var(--font);
+    color: var(--text);
+    background: var(--bg-alt);
+    line-height: 1.6;
+    font-size: 15px;
+  }
+
+  .page-wrapper {
+    max-width: 1320px;
+    margin: 0 auto;
+    background: var(--bg);
+    min-height: 100vh;
+    box-shadow: 0 0 40px rgba(0,0,0,0.06);
+    display: flex;
+    position: relative;
+  }
+  .page-main {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .report-header {
+    background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+    color: #fff;
+    padding: 48px 56px 40px;
+  }
+  .report-header h1 {
+    font-size: 28px;
+    font-weight: 700;
+    margin-bottom: 4px;
+    letter-spacing: -0.5px;
+  }
+  .report-header .subtitle {
+    font-size: 16px;
+    color: #94a3b8;
+    font-weight: 400;
+  }
+  .header-meta {
+    display: flex;
+    gap: 32px;
+    margin-top: 20px;
+    flex-wrap: wrap;
+  }
+  .header-meta-item {
+    font-size: 13px;
+    color: #cbd5e1;
+  }
+  .header-meta-item strong {
+    color: #fff;
+    font-weight: 600;
+  }
+
+  .content {
+    padding: 0 56px 56px;
+  }
+
+  .section {
+    margin-top: 40px;
+  }
+  .section-number {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--accent);
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    margin-bottom: 6px;
+  }
+  .section h2 {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 16px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid var(--border);
+  }
+  .section h3 {
+    font-size: 17px;
+    font-weight: 600;
+    color: var(--text);
+    margin: 28px 0 12px;
+  }
+  .section h4 {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin: 20px 0 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .health-badge-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 8px 0 12px;
+  }
+  .health-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 24px;
+    border-radius: 8px;
+    font-size: 18px;
+    font-weight: 700;
+  }
+  .health-score-label {
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+  .health-score-label strong {
+    color: var(--text-secondary);
+  }
+  .health-badge.high-risk {
+    background: var(--danger-bg);
+    color: var(--danger);
+    border: 2px solid var(--danger);
+  }
+  .health-badge.moderate-risk {
+    background: var(--warn-bg);
+    color: var(--warn);
+    border: 2px solid var(--warn);
+  }
+  .health-badge.healthy {
+    background: var(--positive-bg);
+    color: var(--positive);
+    border: 2px solid var(--positive);
+  }
+  .health-badge .badge-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: currentColor;
+    animation: pulse 2s infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  .kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+    margin: 20px 0;
+  }
+  .kpi-card {
+    padding: 20px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    position: relative;
+    transition: border-color 0.15s;
+  }
+  .kpi-card.selected {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+  }
+  .kpi-info-btn {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    border: 1.5px solid var(--text-muted);
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    padding: 0;
+    transition: all 0.15s;
+  }
+  .kpi-info-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .kpi-card .kpi-value {
+    font-size: 32px;
+    font-weight: 700;
+    line-height: 1.1;
+  }
+  .kpi-card .kpi-label {
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin-top: 4px;
+  }
+  .kpi-card .kpi-sub {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 2px;
+  }
+  .kpi-card.danger .kpi-value { color: var(--danger); }
+  .kpi-card.warn .kpi-value { color: var(--warn); }
+  .kpi-card.positive .kpi-value { color: var(--positive); }
+  .kpi-card.neutral .kpi-value { color: var(--text-secondary); }
+  .kpi-detail {
+    display: none;
+    grid-column: 1 / -1;
+    background: var(--bg-card);
+    border: 1px solid var(--accent);
+    border-radius: 8px;
+    padding: 16px 20px;
+    animation: kpi-detail-in 0.2s ease;
+  }
+  .kpi-detail.active {
+    display: block;
+  }
+  @keyframes kpi-detail-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  .kpi-detail h4 {
+    margin: 0 0 8px 0;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--accent);
+  }
+  .kpi-detail .kpi-detail-what {
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+  }
+  .kpi-detail .kpi-detail-action {
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--text-primary);
+    font-style: italic;
+    margin-bottom: 8px;
+  }
+  .kpi-detail .kpi-detail-thresholds {
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+  .kpi-detail .kpi-detail-scoring {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 2px;
+    font-style: italic;
+  }
+
+  .progress-bar-container {
+    margin: 20px 0;
+  }
+  .progress-bar {
+    height: 28px;
+    border-radius: 6px;
+    overflow: hidden;
+    display: flex;
+    background: var(--neutral-bg);
+    border: 1px solid var(--border);
+  }
+  .progress-bar .seg {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 600;
+    color: #fff;
+    white-space: nowrap;
+    transition: width 0.5s ease;
+  }
+  .progress-bar .seg.done { background: var(--positive); }
+  .progress-bar .seg.review { background: var(--accent); }
+  .progress-bar .seg.testing { background: #8b5cf6; }
+  .progress-bar .seg.inprog { background: var(--warn); }
+  .progress-bar .seg.new { background: var(--neutral); }
+  .progress-legend {
+    display: flex;
+    gap: 20px;
+    margin-top: 8px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    flex-wrap: wrap;
+  }
+  .progress-legend span::before {
+    content: '';
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+    margin-right: 5px;
+    vertical-align: middle;
+  }
+  .progress-legend .l-done::before { background: var(--positive); }
+  .progress-legend .l-review::before { background: var(--accent); }
+  .progress-legend .l-testing::before { background: #8b5cf6; }
+  .progress-legend .l-inprog::before { background: var(--warn); }
+  .progress-legend .l-new::before { background: var(--neutral); }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0;
+    font-size: 14px;
+  }
+  thead th {
+    text-align: left;
+    padding: 10px 14px;
+    background: var(--bg-alt);
+    border-bottom: 2px solid var(--border);
+    font-weight: 600;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+  }
+  tbody td {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  tbody tr:hover { background: var(--bg-alt); }
+
+  .status {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+  }
+  .status.resolved { background: #dbeafe; color: #1e40af; }
+  .status.review { background: #e0e7ff; color: #3730a3; }
+  .status.testing { background: #ede9fe; color: #5b21b6; }
+  .status.inprogress { background: #fef3c7; color: #92400e; }
+  .status.new { background: #f3f4f6; color: #374151; }
+
+  .issue-key {
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--accent);
+    white-space: nowrap;
+    text-decoration: none;
+  }
+  a.issue-key:hover {
+    text-decoration: underline;
+  }
+
+  .callout {
+    padding: 16px 20px;
+    border-radius: 8px;
+    margin: 16px 0;
+    border-left: 4px solid;
+    font-size: 14px;
+  }
+  .callout.positive {
+    background: var(--positive-bg);
+    border-color: var(--positive);
+  }
+  .callout.warning {
+    background: var(--warn-bg);
+    border-color: var(--warn);
+  }
+  .callout.danger {
+    background: var(--danger-bg);
+    border-color: var(--danger);
+  }
+  .callout strong {
+    display: block;
+    margin-bottom: 4px;
+  }
+
+  .dimension-card {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin: 24px 0;
+    overflow: hidden;
+  }
+  .dimension-header {
+    padding: 16px 20px;
+    background: var(--bg-alt);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .dimension-header h3 {
+    margin: 0;
+    font-size: 16px;
+  }
+  .dimension-header .dim-num {
+    background: var(--accent);
+    color: #fff;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+  .dimension-body {
+    padding: 20px;
+  }
+  .dimension-body ul {
+    margin: 8px 0 8px 20px;
+  }
+  .dimension-body li {
+    margin-bottom: 6px;
+  }
+  .dimension-body p {
+    margin-bottom: 10px;
+  }
+
+  .antipattern-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 12px;
+    margin: 16px 0;
+  }
+  .antipattern-card {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 20px;
+    border-left: 4px solid var(--danger);
+  }
+  .antipattern-card .ap-name {
+    font-weight: 700;
+    font-size: 14px;
+    color: var(--danger);
+    margin-bottom: 6px;
+  }
+  .antipattern-card .ap-evidence {
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin-bottom: 6px;
+  }
+  .antipattern-card .ap-impact {
+    font-size: 13px;
+    font-style: italic;
+    color: var(--text-muted);
+  }
+
+  .action-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 12px;
+    margin: 16px 0;
+  }
+  .action-card {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 20px;
+    display: grid;
+    grid-template-columns: 40px 1fr;
+    gap: 16px;
+    align-items: start;
+  }
+  .action-card .action-num {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+  .action-card .action-title {
+    font-weight: 700;
+    font-size: 14px;
+    margin-bottom: 4px;
+  }
+  .action-card .action-impact {
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+  }
+  .action-card .action-evidence {
+    font-size: 12px;
+    color: var(--text-muted);
+    font-style: italic;
+  }
+
+  .coaching-card {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin: 16px 0;
+    overflow: hidden;
+  }
+  .coaching-card-header {
+    padding: 14px 20px;
+    background: var(--bg-alt);
+    border-bottom: 1px solid var(--border);
+    font-weight: 600;
+    font-size: 15px;
+  }
+  .coaching-card-body {
+    padding: 16px 20px;
+  }
+  .coaching-card-body ul {
+    margin: 8px 0 8px 20px;
+  }
+  .coaching-card-body li {
+    margin-bottom: 6px;
+    font-size: 14px;
+  }
+  .coaching-card-body ol {
+    margin: 8px 0 8px 20px;
+  }
+  .coaching-card-body ol li {
+    margin-bottom: 4px;
+    font-size: 14px;
+  }
+  .coaching-card-body p {
+    margin-bottom: 10px;
+    font-size: 14px;
+  }
+
+  .flow-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 16px;
+    margin: 16px 0;
+  }
+  .flow-card {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 20px;
+  }
+  .flow-card h4 {
+    margin: 0 0 10px;
+    font-size: 14px;
+    color: var(--accent);
+    text-transform: none;
+    letter-spacing: 0;
+  }
+  .flow-card ul {
+    margin: 0 0 0 18px;
+    font-size: 13px;
+  }
+  .flow-card li {
+    margin-bottom: 6px;
+  }
+
+  .appendix-table {
+    font-size: 12px;
+    overflow-x: auto;
+  }
+  .appendix-table table {
+    min-width: 900px;
+  }
+  .appendix-table td, .appendix-table th {
+    padding: 8px 10px;
+  }
+  .appendix-table .notes-col {
+    font-size: 11px;
+    color: var(--text-secondary);
+    max-width: 200px;
+  }
+
+  .sprint-pills {
+    display: flex;
+    gap: 3px;
+    flex-wrap: wrap;
+  }
+  .sprint-pill {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: 600;
+    background: var(--neutral-bg);
+    color: var(--text-secondary);
+    white-space: nowrap;
+  }
+  .sprint-pill.current {
+    background: var(--accent-light);
+    color: var(--accent);
+  }
+
+  .toc-sidebar {
+    width: 200px;
+    flex-shrink: 0;
+    position: relative;
+  }
+  .toc {
+    position: sticky;
+    top: 24px;
+    padding: 20px 16px;
+    font-size: 13px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    max-height: calc(100vh - 48px);
+    overflow-y: auto;
+  }
+  .toc strong {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+    padding-left: 10px;
+  }
+  .toc a {
+    color: var(--text-secondary);
+    text-decoration: none;
+    padding: 5px 10px;
+    border-radius: 4px;
+    border-left: 2px solid transparent;
+    transition: all 0.15s;
+    font-size: 12px;
+    line-height: 1.4;
+  }
+  .toc a:hover {
+    color: var(--accent);
+    background: var(--bg-alt);
+  }
+  .toc a.active {
+    color: var(--accent);
+    border-left-color: var(--accent);
+    background: var(--bg-alt);
+    font-weight: 600;
+  }
+
+  .btn-print {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    padding: 12px 20px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    z-index: 100;
+    font-family: var(--font);
+  }
+  .btn-print:hover { background: #1d4ed8; }
+
+  .report-footer {
+    padding: 24px 56px;
+    border-top: 1px solid var(--border);
+    font-size: 13px;
+    color: var(--text-muted);
+    font-style: italic;
+    line-height: 1.5;
+    background: var(--bg-alt);
+  }
+
+  @media print {
+    body { background: #fff; font-size: 12px; }
+    .page-wrapper { box-shadow: none; max-width: none; }
+    .report-header { padding: 24px 32px; }
+    .content { padding: 0 32px 32px; }
+    .badge-dot { animation: none !important; }
+    .section { page-break-inside: avoid; page-break-before: auto; }
+    .dimension-card { page-break-inside: avoid; }
+    .toc-sidebar { display: none; }
+    .page-wrapper { display: block; max-width: none; }
+    .btn-print { display: none; }
+    .kpi-info-btn { display: none; }
+    .kpi-detail { display: none !important; }
+    .report-footer { page-break-before: always; }
+    a { color: inherit; text-decoration: none; }
+    .antipattern-card, .action-card, .coaching-card { page-break-inside: avoid; }
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1a1a2e;
+      --bg-alt: #16213e;
+      --border: #374151;
+      --text: #e5e7eb;
+      --text-secondary: #9ca3af;
+      --text-muted: #6b7280;
+      --accent: #60a5fa;
+      --accent-light: #1e3a5f;
+      --positive: #4ade80;
+      --positive-bg: #064e3b;
+      --warn: #fbbf24;
+      --warn-bg: #78350f;
+      --danger: #f87171;
+      --danger-bg: #7f1d1d;
+      --neutral: #9ca3af;
+      --neutral-bg: #374151;
+    }
+    .report-header {
+      background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+    }
+    .status.resolved { background: #1e3a5f; color: #93c5fd; }
+    .status.review { background: #312e81; color: #a5b4fc; }
+    .status.testing { background: #4c1d95; color: #c4b5fd; }
+    .status.inprogress { background: #78350f; color: #fcd34d; }
+    .status.new { background: #374151; color: #d1d5db; }
+    tbody tr:hover { background: #1e293b; }
+  }
+
+  @media (max-width: 960px) {
+    .toc-sidebar { display: none; }
+    .page-wrapper { display: block; max-width: 1100px; }
+  }
+  @media (max-width: 768px) {
+    .report-header { padding: 24px; }
+    .content { padding: 0 24px 32px; }
+    .report-footer { padding: 20px 24px; }
+    .header-meta { gap: 16px; }
+    .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+</style>
+</head>
+<body>
+<div class="page-wrapper">
+
+<div class="toc-sidebar">
+  <nav class="toc" id="toc">
+    <strong>Navigation</strong>
+    <a href="#section-1">Executive Summary</a>
+    <a href="#section-trends">Trends</a>
+    <a href="#section-2">Key Observations</a>
+    <a href="#section-3">Dimension Analysis</a>
+    <a href="#section-4">Anti-Patterns</a>
+    <a href="#section-5">Flow Improvement</a>
+    <a href="#section-6">Backlog Improvement</a>
+    <a href="#section-7">Top Actions</a>
+    <a href="#section-8">Coaching Notes</a>
+    <a href="#section-appendix">Item Tracker</a>
+  </nav>
+</div>
+
+<div class="page-main">
+<header class="report-header">
+  <h1>S27 Health Report</h1>
+  <div class="subtitle">Training Kubeflow</div>
+  <div class="header-meta">
+    <div class="header-meta-item"><strong>Report Date</strong><br>March 16, 2026</div>
+    <div class="header-meta-item"><strong>Sprint</strong><br>Training Kubeflow Sprint 27 (Current)</div>
+    <div class="header-meta-item"><strong>Team Size</strong><br>8 members</div>
+    <div class="header-meta-item"><strong>Team</strong><br>Abhijeet Dhumal, Christoph Goern, Esa Fazal, Hari Haran Rathinakumar, Kapil Nema, Karel Suta, Shilpa Chugh, Sridhar Pillai</div>
+  </div>
+</header>
+
+<div class="content">
+
+<!-- 1. Executive Summary -->
+<div class="section" id="section-1">
+  <div class="section-number">Section 1</div>
+  <h2>Executive Summary</h2>
+
+  <div class="health-badge-wrapper">
+    <div class="health-badge high-risk">
+      <span class="badge-dot"></span>
+      HIGH RISK
+    </div>
+    <span class="health-score-label">Score: <strong>9</strong>/10+</span>
+    <button class="kpi-info-btn" onclick="toggleKpiDetail('health-rating')" title="How is this rating determined?" style="position:static;">i</button>
+  </div>
+  <div class="kpi-detail" id="kpi-detail-health-rating">
+    <h4>How the Health Rating Works</h4>
+    <div class="kpi-detail-what">
+      The rating is calculated from a <strong>risk score</strong> &mdash; the sum of points across multiple dimensions of sprint health. A higher score means more areas of concern.
+    </div>
+    <div class="kpi-detail-what" style="margin-top: 8px;">
+      <strong>Rating thresholds:</strong><br>
+      &#x1f7e2; <strong>HEALTHY</strong> (0&ndash;2): Delivering predictably with good process discipline.<br>
+      &#x1f7e1; <strong>MODERATE RISK</strong> (3&ndash;5): Mostly on track but process gaps could compound over time.<br>
+      &#x1f534; <strong>HIGH RISK</strong> (6+): Significant delivery problems requiring focused attention.
+    </div>
+    <div class="kpi-detail-what" style="margin-top: 8px;">
+      <strong>What contributes to the score:</strong>
+      <table style="font-size: 12px; margin-top: 6px; width: 100%; border-collapse: collapse;">
+        <tr style="border-bottom: 1px solid var(--border);"><td style="padding: 3px 8px;">Delivery rate &lt; 50%</td><td style="padding: 3px 8px; text-align:right;">+3</td></tr>
+        <tr style="border-bottom: 1px solid var(--border);"><td style="padding: 3px 8px;">Delivery rate 50&ndash;69%</td><td style="padding: 3px 8px; text-align:right;">+2</td></tr>
+        <tr style="border-bottom: 1px solid var(--border);"><td style="padding: 3px 8px;">Delivery rate 70&ndash;84%</td><td style="padding: 3px 8px; text-align:right;">+1</td></tr>
+        <tr style="border-bottom: 1px solid var(--border);"><td style="padding: 3px 8px;">AC coverage &lt; 30%</td><td style="padding: 3px 8px; text-align:right;">+2</td></tr>
+        <tr style="border-bottom: 1px solid var(--border);"><td style="padding: 3px 8px;">AC coverage 30&ndash;69%</td><td style="padding: 3px 8px; text-align:right;">+1</td></tr>
+        <tr style="border-bottom: 1px solid var(--border);"><td style="padding: 3px 8px;">3+ zombie items</td><td style="padding: 3px 8px; text-align:right;">+2</td></tr>
+        <tr style="border-bottom: 1px solid var(--border);"><td style="padding: 3px 8px;">1&ndash;2 zombie items</td><td style="padding: 3px 8px; text-align:right;">+1</td></tr>
+        <tr style="border-bottom: 1px solid var(--border);"><td style="padding: 3px 8px;">&gt; 30% items never started</td><td style="padding: 3px 8px; text-align:right;">+2</td></tr>
+        <tr style="border-bottom: 1px solid var(--border);"><td style="padding: 3px 8px;">15&ndash;30% items never started</td><td style="padding: 3px 8px; text-align:right;">+1</td></tr>
+        <tr><td style="padding: 3px 8px;">Priority coverage &lt; 30%</td><td style="padding: 3px 8px; text-align:right;">+1</td></tr>
+      </table>
+    </div>
+    <div class="kpi-detail-action" style="margin-top: 10px;">
+      Use this as a retro conversation starter: &ldquo;We scored 9 this sprint &mdash; what are the 1&ndash;2 biggest contributors we can address next sprint?&rdquo; The goal is steady improvement toward HEALTHY, not perfection in one sprint.
+    </div>
+  </div>
+
+  <div class="kpi-grid">
+    <div class="kpi-card danger" data-kpi="delivery-rate">
+      <button class="kpi-info-btn" onclick="toggleKpiDetail('delivery-rate')" title="What does this mean?">i</button>
+      <div class="kpi-value">3%</div>
+      <div class="kpi-label">Delivery Rate</div>
+      <div class="kpi-sub">2 of 73 story points</div>
+    </div>
+    <div class="kpi-card danger" data-kpi="never-started">
+      <button class="kpi-info-btn" onclick="toggleKpiDetail('never-started')" title="What does this mean?">i</button>
+      <div class="kpi-value">9</div>
+      <div class="kpi-label">Items Never Started</div>
+      <div class="kpi-sub">35% of sprint items (27 pts)</div>
+    </div>
+    <div class="kpi-card danger" data-kpi="ac-coverage">
+      <button class="kpi-info-btn" onclick="toggleKpiDetail('ac-coverage')" title="What does this mean?">i</button>
+      <div class="kpi-value">0/26</div>
+      <div class="kpi-label">Acceptance Criteria</div>
+      <div class="kpi-sub">AC field coverage</div>
+    </div>
+    <div class="kpi-card neutral" data-kpi="oldest-item">
+      <button class="kpi-info-btn" onclick="toggleKpiDetail('oldest-item')" title="What does this mean?">i</button>
+      <div class="kpi-value">60d</div>
+      <div class="kpi-label">Oldest Open Item</div>
+      <div class="kpi-sub">RHOAIENG-45708</div>
+    </div>
+    <div class="kpi-card neutral" data-kpi="cycle-time">
+      <button class="kpi-info-btn" onclick="toggleKpiDetail('cycle-time')" title="What does this mean?">i</button>
+      <div class="kpi-value">0d</div>
+      <div class="kpi-label">Avg Cycle Time</div>
+      <div class="kpi-sub">Range: 0 &ndash; 0 days</div>
+    </div>
+    <div class="kpi-card danger" data-kpi="carryover">
+      <button class="kpi-info-btn" onclick="toggleKpiDetail('carryover')" title="What does this mean?">i</button>
+      <div class="kpi-value">5</div>
+      <div class="kpi-label">Max Sprint Carryover</div>
+      <div class="kpi-sub">Sprints for longest-carried item</div>
+    </div>
+  </div>
+
+  <div class="kpi-detail" id="kpi-detail-delivery-rate">
+    <h4>Delivery Rate</h4>
+    <div class="kpi-detail-what">Percentage of committed story points completed by sprint end. The core measure of sprint commitment reliability.</div>
+    <div class="kpi-detail-action">A consistently low rate means the team is over-committing, getting pulled into unplanned work, or hitting unanticipated blockers. The fix is &ldquo;commit to less and finish it.&rdquo;</div>
+    <div class="kpi-detail-thresholds">Thresholds: &#x1f7e2; 85%+ &nbsp; &#x1f7e1; 50&ndash;84% &nbsp; &#x1f534; &lt;50%</div>
+    <div class="kpi-detail-scoring">Risk score: +1 (70&ndash;84%) &nbsp; +2 (50&ndash;69%) &nbsp; +3 (&lt;50%)</div>
+  </div>
+  <div class="kpi-detail" id="kpi-detail-never-started">
+    <h4>Items Never Started</h4>
+    <div class="kpi-detail-what">Percentage of items that remained in &ldquo;New&rdquo; status for the entire sprint &mdash; committed but never picked up.</div>
+    <div class="kpi-detail-action">These reveal a disconnect between planning and capacity. The team is treating the sprint backlog like a wish list rather than a commitment. Coach the team to only pull in what they genuinely intend to start.</div>
+    <div class="kpi-detail-thresholds">Thresholds: &#x1f7e2; &lt;15% &nbsp; &#x1f7e1; 15&ndash;30% &nbsp; &#x1f534; &gt;30%</div>
+    <div class="kpi-detail-scoring">Risk score: +1 (15&ndash;30%) &nbsp; +2 (&gt;30%)</div>
+  </div>
+  <div class="kpi-detail" id="kpi-detail-ac-coverage">
+    <h4>Acceptance Criteria</h4>
+    <div class="kpi-detail-what">Percentage of items with acceptance criteria written in their description. Measures definition-of-ready discipline.</div>
+    <div class="kpi-detail-action">Without AC, &ldquo;done&rdquo; is subjective. Low coverage leads to rework, mid-item scope creep, and review delays. This is a leading indicator &mdash; fix it and downstream metrics (cycle time, delivery rate) tend to improve.</div>
+    <div class="kpi-detail-thresholds">Thresholds: &#x1f7e2; 70%+ &nbsp; &#x1f7e1; 30&ndash;69% &nbsp; &#x1f534; &lt;30%</div>
+    <div class="kpi-detail-scoring">Risk score: +1 (30&ndash;69%) &nbsp; +2 (&lt;30%)</div>
+  </div>
+  <div class="kpi-detail" id="kpi-detail-oldest-item">
+    <h4>Oldest Open Item</h4>
+    <div class="kpi-detail-what">Age in days of the oldest unfinished item in the sprint. A high number flags stale work that should be descoped or re-evaluated.</div>
+    <div class="kpi-detail-action">Old items create cognitive drag &mdash; they clutter the board, distort metrics, and signal that it&rsquo;s acceptable to leave things unfinished. Action: close it, descope it, or break it into something achievable this sprint.</div>
+    <div class="kpi-detail-thresholds">Thresholds: &#x1f7e2; &lt;30d &nbsp; &#x1f7e1; 30&ndash;90d &nbsp; &#x1f534; 90d+</div>
+  </div>
+  <div class="kpi-detail" id="kpi-detail-cycle-time">
+    <h4>Avg Cycle Time</h4>
+    <div class="kpi-detail-what">Average days from when an item entered the sprint (or was created, if newer) to resolution. Measures how fast work flows through the sprint.</div>
+    <div class="kpi-detail-action">High cycle time + high delivery rate = finishing things but slowly (large items). High cycle time + low delivery rate = work getting stuck. Look for WIP overload, blocked queues, or handoff delays.</div>
+    <div class="kpi-detail-thresholds">Thresholds: &#x1f7e2; &lt;14d &nbsp; &#x1f7e1; 14&ndash;30d &nbsp; &#x1f534; 30d+</div>
+  </div>
+  <div class="kpi-detail" id="kpi-detail-carryover">
+    <h4>Max Sprint Carryover</h4>
+    <div class="kpi-detail-what">The highest number of sprints any single item has been carried through. Identifies the worst &ldquo;zombie&rdquo; &mdash; work that keeps rolling forward without completion.</div>
+    <div class="kpi-detail-action">An item carried 4+ sprints usually points to unclear ownership, missing prerequisites, or work that should have been descoped. Find it, ask &ldquo;what&rsquo;s blocking this from being done or removed?&rdquo; &mdash; the root cause often reveals a systemic issue.</div>
+    <div class="kpi-detail-thresholds">Thresholds: &#x1f7e2; 1 &nbsp; &#x1f7e1; 2&ndash;3 &nbsp; &#x1f534; 4+</div>
+    <div class="kpi-detail-scoring">Risk score: +1 (1&ndash;2 zombies) &nbsp; +2 (3+ zombies)</div>
+  </div>
+
+  <div class="progress-bar-container">
+    <strong style="font-size:13px; color: var(--text-secondary); margin-bottom:6px; display:block;">Story Points by Status</strong>
+    <div class="progress-bar">
+      <div class="seg done" style="width:2.7%" title="Resolved: 2 pts (4 items)">2 pts</div>
+      <div class="seg review" style="width:24.7%" title="Review: 18 pts (5 items)">18</div>
+      <div class="seg testing" style="width:5.5%" title="Testing: 4 pts (1 items)">4</div>
+      <div class="seg inprog" style="width:30.1%" title="In Progress: 22 pts (7 items)">22 pts</div>
+      <div class="seg new" style="width:37.0%" title="New: 27 pts (9 items)">27 pts</div>
+    </div>
+    <div class="progress-legend">
+      <span class="l-done">Resolved (2 pts, 4 items)</span>
+      <span class="l-review">Review (18 pts, 5 items)</span>
+      <span class="l-testing">Testing (4 pts, 1 items)</span>
+      <span class="l-inprog">In Progress (22 pts, 7 items)</span>
+      <span class="l-new">New / Not Started (27 pts, 9 items)</span>
+    </div>
+  </div>
+
+  <div class="callout recommendation" style="margin-top: 20px; border-left: 4px solid var(--accent); background: linear-gradient(135deg, rgba(37,99,235,0.06), rgba(37,99,235,0.02)); padding: 16px 20px;">
+    <strong style="font-size: 14px; color: var(--accent);">#1 Recommended Action</strong>
+    <p style="margin: 8px 0 0; font-size: 14px; line-height: 1.5;">Cut sprint scope by 40-50%. The team is completing less than half of committed work -- commit to fewer items and finish them.</p>
+  </div>
+</div>
+
+
+<div class="callout positive" style="margin-top: 24px;">
+  <strong>Positive Signals</strong>
+  <ul style="margin: 8px 0 0 20px; font-size: 14px;"><li>4 items successfully delivered (2 story points)</li></ul>
+</div>
+
+<!-- Trend Charts -->
+<div class="section" id="section-trends">
+  <div class="section-number">Trends</div>
+  <h2>Sprint-over-Sprint Trends</h2>
+  <p style="font-size:13px; color: var(--text-secondary); margin-bottom: 16px;">Tracking key metrics across the last 4 sprints to identify improvement trajectories.</p>
+  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 20px; margin: 16px 0;">
+    <div style="border: 1px solid var(--border); border-radius: 8px; padding: 16px; text-align: center;">
+      <svg width="400" height="150" viewBox="0 0 400 150" xmlns="http://www.w3.org/2000/svg" style="font-family: var(--font); overflow: visible;">
+  <text x="200.0" y="14" text-anchor="middle" font-size="12" font-weight="600" fill="var(--text-secondary)">Velocity (Story Points Delivered)</text>
+  <g transform="translate(0, 10)">
+    <line x1="40" y1="20.0" x2="360" y2="20.0" stroke="var(--border)" stroke-dasharray="3"/>
+    <text x="35" y="24.0" text-anchor="end" font-size="10" fill="var(--text-muted)">81</text>
+    <line x1="40" y1="60.0" x2="360" y2="60.0" stroke="var(--border)" stroke-dasharray="3"/>
+    <text x="35" y="64.0" text-anchor="end" font-size="10" fill="var(--text-muted)">42</text>
+    <line x1="40" y1="100.0" x2="360" y2="100.0" stroke="var(--border)" stroke-dasharray="3"/>
+    <text x="35" y="104.0" text-anchor="end" font-size="10" fill="var(--text-muted)">2</text>
+    <polyline points="40,20 147,41 253,75 360,100" fill="none" stroke="#16a34a" stroke-width="2.5" stroke-linejoin="round"/>
+    <circle cx="40" cy="20" r="4" fill="#16a34a" stroke="#fff" stroke-width="1.5"/>
+    <text x="40" y="12" text-anchor="middle" font-size="10" font-weight="600" fill="#16a34a">81</text>
+    <text x="40" y="118" text-anchor="middle" font-size="9" fill="var(--text-muted)">S24</text>
+    <circle cx="147" cy="41" r="4" fill="#16a34a" stroke="#fff" stroke-width="1.5"/>
+    <text x="147" y="33" text-anchor="middle" font-size="10" font-weight="600" fill="#16a34a">60</text>
+    <text x="147" y="118" text-anchor="middle" font-size="9" fill="var(--text-muted)">S25</text>
+    <circle cx="253" cy="75" r="4" fill="#16a34a" stroke="#fff" stroke-width="1.5"/>
+    <text x="253" y="67" text-anchor="middle" font-size="10" font-weight="600" fill="#16a34a">27</text>
+    <text x="253" y="118" text-anchor="middle" font-size="9" fill="var(--text-muted)">S26</text>
+    <circle cx="360" cy="100" r="4" fill="#16a34a" stroke="#fff" stroke-width="1.5"/>
+    <text x="360" y="92" text-anchor="middle" font-size="10" font-weight="600" fill="#16a34a">2</text>
+    <text x="360" y="118" text-anchor="middle" font-size="9" fill="var(--text-muted)">S27</text>
+  </g>
+</svg>
+
+    </div>
+    <div style="border: 1px solid var(--border); border-radius: 8px; padding: 16px; text-align: center;">
+      <svg width="400" height="150" viewBox="0 0 400 150" xmlns="http://www.w3.org/2000/svg" style="font-family: var(--font); overflow: visible;">
+  <text x="200.0" y="14" text-anchor="middle" font-size="12" font-weight="600" fill="var(--text-secondary)">Delivery Rate</text>
+  <g transform="translate(0, 10)">
+    <line x1="40" y1="20.0" x2="360" y2="20.0" stroke="var(--border)" stroke-dasharray="3"/>
+    <text x="35" y="24.0" text-anchor="end" font-size="10" fill="var(--text-muted)">98%</text>
+    <line x1="40" y1="60.0" x2="360" y2="60.0" stroke="var(--border)" stroke-dasharray="3"/>
+    <text x="35" y="64.0" text-anchor="end" font-size="10" fill="var(--text-muted)">50%</text>
+    <line x1="40" y1="100.0" x2="360" y2="100.0" stroke="var(--border)" stroke-dasharray="3"/>
+    <text x="35" y="104.0" text-anchor="end" font-size="10" fill="var(--text-muted)">3%</text>
+    <polyline points="40,20 147,34 253,76 360,100" fill="none" stroke="#2563eb" stroke-width="2.5" stroke-linejoin="round"/>
+    <circle cx="40" cy="20" r="4" fill="#2563eb" stroke="#fff" stroke-width="1.5"/>
+    <text x="40" y="12" text-anchor="middle" font-size="10" font-weight="600" fill="#2563eb">98%</text>
+    <text x="40" y="118" text-anchor="middle" font-size="9" fill="var(--text-muted)">S24</text>
+    <circle cx="147" cy="34" r="4" fill="#2563eb" stroke="#fff" stroke-width="1.5"/>
+    <text x="147" y="26" text-anchor="middle" font-size="10" font-weight="600" fill="#2563eb">81%</text>
+    <text x="147" y="118" text-anchor="middle" font-size="9" fill="var(--text-muted)">S25</text>
+    <circle cx="253" cy="76" r="4" fill="#2563eb" stroke="#fff" stroke-width="1.5"/>
+    <text x="253" y="68" text-anchor="middle" font-size="10" font-weight="600" fill="#2563eb">31%</text>
+    <text x="253" y="118" text-anchor="middle" font-size="9" fill="var(--text-muted)">S26</text>
+    <circle cx="360" cy="100" r="4" fill="#2563eb" stroke="#fff" stroke-width="1.5"/>
+    <text x="360" y="92" text-anchor="middle" font-size="10" font-weight="600" fill="#2563eb">3%</text>
+    <text x="360" y="118" text-anchor="middle" font-size="9" fill="var(--text-muted)">S27</text>
+  </g>
+</svg>
+
+    </div>
+    <div style="border: 1px solid var(--border); border-radius: 8px; padding: 16px; text-align: center;">
+      <svg width="400" height="150" viewBox="0 0 400 150" xmlns="http://www.w3.org/2000/svg" style="font-family: var(--font); overflow: visible;">
+  <text x="200.0" y="14" text-anchor="middle" font-size="12" font-weight="600" fill="var(--text-secondary)">Carryover Items</text>
+  <g transform="translate(0, 10)">
+    <line x1="40" y1="20.0" x2="360" y2="20.0" stroke="var(--border)" stroke-dasharray="3"/>
+    <text x="35" y="24.0" text-anchor="end" font-size="10" fill="var(--text-muted)">7</text>
+    <line x1="40" y1="60.0" x2="360" y2="60.0" stroke="var(--border)" stroke-dasharray="3"/>
+    <text x="35" y="64.0" text-anchor="end" font-size="10" fill="var(--text-muted)">5</text>
+    <line x1="40" y1="100.0" x2="360" y2="100.0" stroke="var(--border)" stroke-dasharray="3"/>
+    <text x="35" y="104.0" text-anchor="end" font-size="10" fill="var(--text-muted)">3</text>
+    <polyline points="40,100 147,100 253,20 360,20" fill="none" stroke="#dc2626" stroke-width="2.5" stroke-linejoin="round"/>
+    <circle cx="40" cy="100" r="4" fill="#dc2626" stroke="#fff" stroke-width="1.5"/>
+    <text x="40" y="92" text-anchor="middle" font-size="10" font-weight="600" fill="#dc2626">3</text>
+    <text x="40" y="118" text-anchor="middle" font-size="9" fill="var(--text-muted)">S24</text>
+    <circle cx="147" cy="100" r="4" fill="#dc2626" stroke="#fff" stroke-width="1.5"/>
+    <text x="147" y="92" text-anchor="middle" font-size="10" font-weight="600" fill="#dc2626">3</text>
+    <text x="147" y="118" text-anchor="middle" font-size="9" fill="var(--text-muted)">S25</text>
+    <circle cx="253" cy="20" r="4" fill="#dc2626" stroke="#fff" stroke-width="1.5"/>
+    <text x="253" y="12" text-anchor="middle" font-size="10" font-weight="600" fill="#dc2626">7</text>
+    <text x="253" y="118" text-anchor="middle" font-size="9" fill="var(--text-muted)">S26</text>
+    <circle cx="360" cy="20" r="4" fill="#dc2626" stroke="#fff" stroke-width="1.5"/>
+    <text x="360" y="12" text-anchor="middle" font-size="10" font-weight="600" fill="#dc2626">7</text>
+    <text x="360" y="118" text-anchor="middle" font-size="9" fill="var(--text-muted)">S27</text>
+  </g>
+</svg>
+
+    </div>
+    <div style="border: 1px solid var(--border); border-radius: 8px; padding: 16px; text-align: center;">
+      <svg width="400" height="150" viewBox="0 0 400 150" xmlns="http://www.w3.org/2000/svg" style="font-family: var(--font); overflow: visible;">
+  <text x="200.0" y="14" text-anchor="middle" font-size="12" font-weight="600" fill="var(--text-secondary)">Avg Cycle Time (days)</text>
+  <g transform="translate(0, 10)">
+    <line x1="40" y1="20.0" x2="360" y2="20.0" stroke="var(--border)" stroke-dasharray="3"/>
+    <text x="35" y="24.0" text-anchor="end" font-size="10" fill="var(--text-muted)">34</text>
+    <line x1="40" y1="60.0" x2="360" y2="60.0" stroke="var(--border)" stroke-dasharray="3"/>
+    <text x="35" y="64.0" text-anchor="end" font-size="10" fill="var(--text-muted)">17</text>
+    <line x1="40" y1="100.0" x2="360" y2="100.0" stroke="var(--border)" stroke-dasharray="3"/>
+    <text x="35" y="104.0" text-anchor="end" font-size="10" fill="var(--text-muted)">0</text>
+    <polyline points="40,43 147,31 253,20 360,100" fill="none" stroke="#f59e0b" stroke-width="2.5" stroke-linejoin="round"/>
+    <circle cx="40" cy="43" r="4" fill="#f59e0b" stroke="#fff" stroke-width="1.5"/>
+    <text x="40" y="35" text-anchor="middle" font-size="10" font-weight="600" fill="#f59e0b">24</text>
+    <text x="40" y="118" text-anchor="middle" font-size="9" fill="var(--text-muted)">S24</text>
+    <circle cx="147" cy="31" r="4" fill="#f59e0b" stroke="#fff" stroke-width="1.5"/>
+    <text x="147" y="23" text-anchor="middle" font-size="10" font-weight="600" fill="#f59e0b">29</text>
+    <text x="147" y="118" text-anchor="middle" font-size="9" fill="var(--text-muted)">S25</text>
+    <circle cx="253" cy="20" r="4" fill="#f59e0b" stroke="#fff" stroke-width="1.5"/>
+    <text x="253" y="12" text-anchor="middle" font-size="10" font-weight="600" fill="#f59e0b">34</text>
+    <text x="253" y="118" text-anchor="middle" font-size="9" fill="var(--text-muted)">S26</text>
+    <circle cx="360" cy="100" r="4" fill="#f59e0b" stroke="#fff" stroke-width="1.5"/>
+    <text x="360" y="92" text-anchor="middle" font-size="10" font-weight="600" fill="#f59e0b">0</text>
+    <text x="360" y="118" text-anchor="middle" font-size="9" fill="var(--text-muted)">S27</text>
+  </g>
+</svg>
+
+    </div>
+  </div>
+  
+  <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 16px 20px; margin-top: 16px; font-size: 13px; line-height: 1.6;">
+    <h4 style="margin: 0 0 10px 0; font-size: 14px; color: var(--text-primary);">How to Read These Trends</h4>
+    <ul style="margin: 0; padding-left: 20px; color: var(--text-secondary);">
+      <li style="margin-bottom: 6px;"><strong>Velocity</strong> declined from 81 to 2 points. Investigate whether this reflects capacity changes, scope inflation, or delivery bottlenecks.</li><li style="margin-bottom: 6px;"><strong>Delivery rate</strong> dropped from 98% to 3%. This suggests over-commitment or mid-sprint disruptions are increasing.</li><li style="margin-bottom: 6px;"><strong>Carryover</strong> increased from 3 to 7 items — incomplete work is accumulating. Review sprint commitment sizing and blockers.</li><li style="margin-bottom: 6px;"><strong>Avg cycle time</strong> shortened from 24 to 0 days — work is flowing faster through the system.</li>
+    </ul>
+  </div>
+
+</div>
+
+
+<!-- 2. Key Sprint Observations -->
+<div class="section" id="section-2">
+  <div class="section-number">Section 2</div>
+  <h2>Key Sprint Observations</h2>
+
+  <table>
+    <thead>
+      <tr><th>Observation</th><th>Detail</th><th>Impact</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>2 of 73 story points delivered</strong></td>
+        <td>4 items resolved. 7 items (22 pts) still In Progress. 9 items (27 pts) never started</td>
+        <td>More than two-thirds of committed work is unfinished</td>
+      </tr>
+      <tr>
+        <td><strong>Zombie: <a href="https://redhat.atlassian.net/browse/RHOAIENG-45708" target="_blank" class="issue-key">RHOAIENG-45708</a></strong></td>
+        <td>Status transitions: New -> In Progress (Mar 9) -> Review (Mar 11). Assignee changed from Esa Fazal to Hari Haran Rathinakumar (Jan 29). Story points changed: 6 -> 3 (Jan 15), then 3 -> 1 -> 3 (Mar 12). Sprint moves: Sprint 24 (Jan 28) -> removed -> Sprint 25 (Feb 12) -> removed -> Sprint 27 (Feb 25) -> removed -> Sprint 27 again (Feb 25) -> Sprint 26 (Feb 25) -> Sprint 26 + Sprint 27 (Mar 12). Description and summary were substantially rewritten on Jan 15 (repurposed from async checkpoint upload task to S3 storage docs example). Summary refined again on Feb 25.</td>
+        <td>In 5+ sprints</td>
+      </tr>
+      <tr>
+        <td><strong>Zombie: <a href="https://redhat.atlassian.net/browse/RHOAIENG-46729" target="_blank" class="issue-key">RHOAIENG-46729</a></strong></td>
+        <td>Created 2026-01-21. Initially placed in Sprint 24, removed from Sprint 24 on Jan 28, added to Sprint 26 on Feb 26, then carried into Sprint 27 on Mar 12. Summary prefixed with [SPIKE] on Jan 21. Story Points set to 6 on Jan 23, reduced to 4 on Feb 26. Activity Type set to 'Tech Debt & Quality' by Rob Bell on Mar 2. Status moved from New to In Progress on Mar 10. Clone link to RHOAIENG-48658 created and then removed in Feb.</td>
+        <td>In 3+ sprints</td>
+      </tr>
+      <tr>
+        <td><strong>Zombie: <a href="https://redhat.atlassian.net/browse/RHOAIENG-48007" target="_blank" class="issue-key">RHOAIENG-48007</a></strong></td>
+        <td>Created 2026-01-29 by Abhijeet Dhumal (cloned from RHOAIENG-42362). Summary renamed from 'TransformersTrainer' to 'TrainingHubTrainer' same day. Initially assigned to Abhijeet Dhumal, reassigned to Shilpa Chugh on 2026-02-11 by Rob Bell. Added to Sprint 25 on 2026-02-11, carried into Sprint 26 on 2026-02-26, then Sprint 27 on 2026-03-12. Story points changed: 2 -> 3 (2026-02-12, by Shilpa) -> 1 (2026-03-12, by Shilpa). Priority changed from Undefined to Major on 2026-02-26. Status moved from New to In Progress on 2026-02-23. Activity Type set to 'Tech Debt & Quality'. A Git PR link (distributed-workloads/pull/582) was added then removed on 2026-02-12.</td>
+        <td>In 3+ sprints</td>
+      </tr>
+      <tr>
+        <td><strong>Universal AC gap</strong></td>
+        <td>0/26 items have acceptance criteria in the AC field. 11 items embed AC in description.</td>
+        <td>No objective standard for "done"; completion depends on verbal agreement</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+
+<!-- 3. Dimension Analysis -->
+<div class="section" id="section-3">
+  <div class="section-number">Section 3</div>
+  <h2>Dimension Analysis</h2>
+
+  <!-- 3.1 -->
+  <div class="dimension-card">
+    <div class="dimension-header">
+      <span class="dim-num">1</span>
+      <h3>Sprint Commitment Reliability</h3>
+    </div>
+    <div class="dimension-body">
+      <h4>Observations</h4>
+      <ul>
+        <li>Total commitment: 73 story points across 26 items.</li>
+        <li>Delivered: 2 points (3%) across 4 items.</li>
+        <li>Remaining: 71 points &mdash; 18 Review, 22 Inprogress, 27 New, 4 Testing.</li>
+        <li>6 unresolved items appear in multiple sprints (carryover candidates).</li>
+        <li>9 items (27 points) remain in "New" status &mdash; committed but never started.</li>
+      </ul>
+      <h4>Potential Risks</h4>
+      <ul>
+        <li>Commitment at 73 pts is ~36x the team's demonstrated throughput of 2 pts.</li>
+        <li>The next sprint will inherit 71 points of unfinished work if the team follows a carry-forward pattern.</li>
+      </ul>
+      <h4>Coaching Recommendations</h4>
+      <ul>
+        <li>Establish a sprint capacity target based on historical velocity: ~10 points.</li>
+        <li>Use zero-based loading: start empty, pull only what the team can realistically finish.</li>
+        <li>Target 85%+ completion rate within 3 sprints.</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- 3.2 -->
+  <div class="dimension-card">
+    <div class="dimension-header">
+      <span class="dim-num">2</span>
+      <h3>Scope Stability</h3>
+    </div>
+    <div class="dimension-body">
+      <h4>Observations</h4>
+      <ul>
+        <li>7 items were created within the last 14 days of the sprint, suggesting significant ongoing scope addition.</li>
+        <li>2 items at 0 points &mdash; process items not reflected in capacity planning.</li>
+      </ul>
+      <h4>Coaching Recommendations</h4>
+      <ul>
+        <li>Never repurpose existing items. Create new Jira issues for new work.</li>
+        <li>Establish a sprint scope freeze after planning. New items require a trade-off: equal-sized work must be removed.</li>
+        <li>Tag mid-sprint additions as &lsquo;unplanned&rsquo; to make scope injection visible.</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- 3.3 -->
+  <div class="dimension-card">
+    <div class="dimension-header">
+      <span class="dim-num">3</span>
+      <h3>Flow Efficiency</h3>
+    </div>
+    <div class="dimension-body">
+      <h4>Observations</h4>
+      <ul>
+        <li><strong>9 items (27 pts) in &lsquo;New&rsquo; status</strong> &mdash; added to the sprint but never started.</li>
+        <li>1 item(s) in Testing (4 pts) &mdash; may indicate a testing bottleneck.</li>
+        <li>5 item(s) in Review (18 pts). 1 have been in review for 30+ days.</li>
+      </ul>
+      <h4>Coaching Recommendations</h4>
+      <ul>
+        <li>Only pull items into the sprint when they will be started within 3 days.</li>
+        <li>Implement WIP limits: 2&ndash;3 active items per engineer.</li>
+        <li>Establish a review SLA: items in Review for more than 3 business days should be escalated.</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- 3.4 -->
+  <div class="dimension-card">
+    <div class="dimension-header">
+      <span class="dim-num">4</span>
+      <h3>Story Size &amp; Work Decomposition</h3>
+    </div>
+    <div class="dimension-body">
+      <h4>Observations</h4>
+      <ul>
+        <li>Story point distribution: 0-pt (2), 1-pt (3), 2-pt (8), 3-pt (2), 4-pt (4), 5-pt (4), 6-pt (2).</li>
+        <li>1 items have no estimate.</li>
+        <li>2 items at 0 points represent unestimated or placeholder work.</li>
+      </ul>
+      <h4>Coaching Recommendations</h4>
+      <ul>
+        <li>Every item in the sprint must have a non-zero estimate.</li>
+        <li>Items over 5 points should be broken down before entering a sprint.</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- 3.5 -->
+  <div class="dimension-card">
+    <div class="dimension-header">
+      <span class="dim-num">5</span>
+      <h3>Work Distribution</h3>
+    </div>
+    <div class="dimension-body">
+      <h4>Observations</h4>
+      <table>
+        <thead><tr><th>Assignee</th><th>Items</th><th>Points</th><th>Completed</th><th>Completion Rate</th></tr></thead>
+        <tbody>
+          <tr><td>Esa Fazal</td><td>5</td><td>10</td><td>2 (2 pts)</td><td>40%</td></tr>
+          <tr><td>Kapil Nema</td><td>5</td><td>12</td><td>0 (0 pts)</td><td>0%</td></tr>
+          <tr><td>Shilpa Chugh</td><td>4</td><td>12</td><td>0 (0 pts)</td><td>0%</td></tr>
+          <tr><td>Karel Suta</td><td>3</td><td>10</td><td>1 (0 pts)</td><td>33%</td></tr>
+          <tr><td>Abhijeet Dhumal</td><td>3</td><td>14</td><td>0 (0 pts)</td><td>0%</td></tr>
+          <tr><td>Hari Haran Rathinakumar</td><td>2</td><td>8</td><td>0 (0 pts)</td><td>0%</td></tr>
+          <tr><td>(Unassigned)</td><td>2</td><td>4</td><td>0 (0 pts)</td><td>0%</td></tr>
+          <tr><td>Christoph Goern</td><td>1</td><td>0</td><td>1 (0 pts)</td><td>100%</td></tr>
+          <tr><td>Sridhar Pillai</td><td>1</td><td>3</td><td>0 (0 pts)</td><td>0%</td></tr>
+        </tbody>
+      </table>
+      <h4>Coaching Recommendations</h4>
+      <ul>
+        
+        <li>Investigate team members with 0 completions &mdash; are they blocked or working on untracked items?</li>
+        <li>For the next sprint, cap individual commitment at 3&ndash;4 items per person.</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- 3.6 -->
+  <div class="dimension-card">
+    <div class="dimension-header">
+      <span class="dim-num">6</span>
+      <h3>Blocker Analysis</h3>
+    </div>
+    <div class="dimension-body">
+      <h4>Observations</h4>
+      <p>No formal blocker links detected. Jira enrichment may reveal additional blockers from changelogs and comments.</p>
+      <h4>Zombie Items</h4>
+      <ul>
+        <li><strong><span class="issue-key">RHOAIENG-45708</span></strong> &mdash; [Docs] Add S3 storage usage example to RH-AI examples. Status transitions: New -> In Progress (Mar 9) -> Review (Mar 11). Assignee changed from Esa Fazal to Hari Haran Rathinakumar (Jan 29). Story points changed: 6 -> 3 (Jan 15), then 3 -> 1 -> 3 (Mar 12). Sprint moves: Sprint 24 (Jan 28) -> removed -> Sprint 25 (Feb 12) -> removed -> Sprint 27 (Feb 25) -> removed -> Sprint 27 again (Feb 25) -> Sprint 26 (Feb 25) -> Sprint 26 + Sprint 27 (Mar 12). Description and summary were substantially rewritten on Jan 15 (repurposed from async checkpoint upload task to S3 storage docs example). Summary refined again on Feb 25..</li>
+        <li><strong><span class="issue-key">RHOAIENG-46729</span></strong> &mdash; [SPIKE] Investigate Kueue configuration options for workbenc. Created 2026-01-21. Initially placed in Sprint 24, removed from Sprint 24 on Jan 28, added to Sprint 26 on Feb 26, then carried into Sprint 27 on Mar 12. Summary prefixed with [SPIKE] on Jan 21. Story Points set to 6 on Jan 23, reduced to 4 on Feb 26. Activity Type set to 'Tech Debt & Quality' by Rob Bell on Mar 2. Status moved from New to In Progress on Mar 10. Clone link to RHOAIENG-48658 created and then removed in Feb..</li>
+        <li><strong><span class="issue-key">RHOAIENG-48007</span></strong> &mdash; Update Kubeflow SDK e2e tests (TrainingHubTrainer) to run in. Created 2026-01-29 by Abhijeet Dhumal (cloned from RHOAIENG-42362). Summary renamed from 'TransformersTrainer' to 'TrainingHubTrainer' same day. Initially assigned to Abhijeet Dhumal, reassigned to Shilpa Chugh on 2026-02-11 by Rob Bell. Added to Sprint 25 on 2026-02-11, carried into Sprint 26 on 2026-02-26, then Sprint 27 on 2026-03-12. Story points changed: 2 -> 3 (2026-02-12, by Shilpa) -> 1 (2026-03-12, by Shilpa). Priority changed from Undefined to Major on 2026-02-26. Status moved from New to In Progress on 2026-02-23. Activity Type set to 'Tech Debt & Quality'. A Git PR link (distributed-workloads/pull/582) was added then removed on 2026-02-12..</li>
+        <li><strong><span class="issue-key">RHOAIENG-49498</span></strong> &mdash; [Docs] Write S3 storage configuration and best practices doc. Status: New -> In Progress (Mar 10) -> Backlog (Mar 12) -> In Progress (Mar 16). Story Points changed multiple times: 6 -> 3 -> 4 -> 3 -> 4 -> 2. Sprint moves: initially Sprint 25, removed, added to Sprint 27, removed, moved to Sprint 26, then carried into Sprint 26+27. Assignee set to Esa Fazal on Feb 25. Description updated twice to refine formatting and add S3/PVC scope. Rob Bell set Activity Type to 'New Features' on Mar 2..</li>
+        <li><strong><span class="issue-key">RHOAIENG-50650</span></strong> &mdash; [Signoff] PM signoff on feature: Model checkpointing support. Created 2026-02-24 as a clone of RHOAIENG-45707. Esa Fazal unassigned herself and cleared story points immediately after creation. Rob Bell assigned Christoph Goern and ranked the issue. Sprint moved multiple times between Sprint 27 and Sprint 26 by Esa Fazal, then carried into both Sprint 26 and Sprint 27 by Rob Bell. Description was updated with detailed acceptance criteria for async checkpoint uploading. Christoph Goern moved status from New to Review to Closed (Done) on 2026-03-12. Epic Link (RHOAIENG-42169) was removed and re-added by Rob Bell on 2026-03-13..</li>
+      </ul>
+      <h4>Coaching Recommendations</h4>
+      <ul>
+        <li>Track external dependencies on a separate board. Items blocked by other teams should not count against sprint capacity.</li>
+        <li>Establish a maximum sprint lifespan: any item in 2 consecutive sprints must be re-evaluated.</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- 3.7 -->
+  <div class="dimension-card">
+    <div class="dimension-header">
+      <span class="dim-num">7</span>
+      <h3>Backlog Health</h3>
+    </div>
+    <div class="dimension-body">
+      <h4>Observations</h4>
+      <ul>
+        <li><strong>AC field coverage:</strong> 0/26 items have acceptance criteria in the AC field. 11 items embed AC in their description.</li>
+        <li><strong>Priority coverage:</strong> 6/26 items have defined priority (23%).</li>
+        <li><strong>Issue types:</strong> Task (25), Story (1)</li>
+      </ul>
+      <h4>Priority Distribution</h4>
+      <div style="margin: 8px 0 16px;">
+        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px; font-size: 13px;">
+          <span style="width: 70px; text-align: right; color: var(--text-secondary);">Critical</span>
+          <div style="flex: 1; height: 18px; background: var(--neutral-bg); border-radius: 3px; overflow: hidden;">
+            <div style="width: 7.7%; height: 100%; background: #dc2626; border-radius: 3px; display: flex; align-items: center; padding-left: 6px; color: #fff; font-size: 11px; font-weight: 600;">2</div>
+          </div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px; font-size: 13px;">
+          <span style="width: 70px; text-align: right; color: var(--text-secondary);">Blocker</span>
+          <div style="flex: 1; height: 18px; background: var(--neutral-bg); border-radius: 3px; overflow: hidden;">
+            <div style="width: 3.8%; height: 100%; background: #dc2626; border-radius: 3px; display: flex; align-items: center; padding-left: 6px; color: #fff; font-size: 11px; font-weight: 600;">1</div>
+          </div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px; font-size: 13px;">
+          <span style="width: 70px; text-align: right; color: var(--text-secondary);">Major</span>
+          <div style="flex: 1; height: 18px; background: var(--neutral-bg); border-radius: 3px; overflow: hidden;">
+            <div style="width: 3.8%; height: 100%; background: #f59e0b; border-radius: 3px; display: flex; align-items: center; padding-left: 6px; color: #fff; font-size: 11px; font-weight: 600;">1</div>
+          </div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px; font-size: 13px;">
+          <span style="width: 70px; text-align: right; color: var(--text-secondary);">Normal</span>
+          <div style="flex: 1; height: 18px; background: var(--neutral-bg); border-radius: 3px; overflow: hidden;">
+            <div style="width: 7.7%; height: 100%; background: #2563eb; border-radius: 3px; display: flex; align-items: center; padding-left: 6px; color: #fff; font-size: 11px; font-weight: 600;">2</div>
+          </div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px; font-size: 13px;">
+          <span style="width: 70px; text-align: right; color: var(--text-secondary);">Undefined</span>
+          <div style="flex: 1; height: 18px; background: var(--neutral-bg); border-radius: 3px; overflow: hidden;">
+            <div style="width: 76.9%; height: 100%; background: #d1d5db; border-radius: 3px; display: flex; align-items: center; padding-left: 6px; color: #fff; font-size: 11px; font-weight: 600;">20</div>
+          </div>
+        </div>
+      </div>
+      <h4>Coaching Recommendations</h4>
+      <ul>
+        <li>Establish a &lsquo;no AC, no sprint&rsquo; gate: items without testable acceptance criteria cannot enter the sprint.</li>
+        <li>Set priority on all items at minimum (Critical/Major/Normal).</li>
+        <li>Use issue types deliberately: Story = feature, Bug = defect, Task = technical, Spike = investigation.</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- 3.8 -->
+  <div class="dimension-card">
+    <div class="dimension-header">
+      <span class="dim-num">8</span>
+      <h3>Delivery Predictability</h3>
+    </div>
+    <div class="dimension-body">
+      <h4>Observations</h4>
+      <ul>
+        <li>Completed points (2) vs. committed (73) = 3% delivery rate.</li>
+        
+        <li>7 items appear in multiple sprints, indicating a chronic carryover pattern.</li>
+      </ul>
+      <h4>Coaching Recommendations</h4>
+      <ul>
+        <li>Adopt a &lsquo;fresh sprint&rsquo; policy: incomplete items return to backlog at sprint boundary.</li>
+        <li>Target commitment of ~10 points (based on current 2-point throughput).</li>
+        <li>Use cycle time &gt; 2 sprints as a health flag for investigation.</li>
+      </ul>
+    </div>
+  </div>
+
+</div>
+
+<!-- 4. Anti-Patterns -->
+<div class="section" id="section-4">
+  <div class="section-number">Section 4</div>
+  <h2>Agile Anti-Patterns Detected</h2>
+
+  <div class="antipattern-grid">
+    <div class="antipattern-card">
+      <div class="ap-name">Chronic Overcommitment</div>
+      <div class="ap-evidence">73.0 points committed vs. 2.0 delivered (3%). 9 items (27.0 pts) never started.</div>
+      <div class="ap-impact">Erodes trust, makes forecasting impossible. The team never experiences the satisfaction of completing a sprint.</div>
+    </div>
+    <div class="antipattern-card">
+      <div class="ap-name">Perpetual Carryover</div>
+      <div class="ap-evidence">5 zombie items detected. RHOAIENG-45708 (5 sprints, 60d); RHOAIENG-46729 (3 sprints, 54d); RHOAIENG-48007 (3 sprints, 46d).</div>
+      <div class="ap-impact">Treats the sprint as a rolling backlog. Items lose urgency when they can always move to next sprint.</div>
+    </div>
+    <div class="antipattern-card">
+      <div class="ap-name">Item Repurposing</div>
+      <div class="ap-evidence">3 items were repurposed mid-sprint: RHOAIENG-45708; RHOAIENG-47874; RHOAIENG-50650. Original work history destroyed.</div>
+      <div class="ap-impact">Violates traceability, makes velocity measurement meaningless, hides scope change.</div>
+    </div>
+    <div class="antipattern-card">
+      <div class="ap-name">Hidden Work</div>
+      <div class="ap-evidence">2 items at 0 points; 1 unestimated items. These consume attention without capacity allocation.</div>
+      <div class="ap-impact">Invisible effort consumes capacity. Planning underestimates true workload.</div>
+    </div>
+    <div class="antipattern-card">
+      <div class="ap-name">Missing Definition of Ready</div>
+      <div class="ap-evidence">0/26 items have AC. 6/26 have defined priority. Items enter sprint without clear scope.</div>
+      <div class="ap-impact">No objective standard for 'done'. Completion is subjective. Sprint planning is based on summaries, not specifications.</div>
+    </div>
+    <div class="antipattern-card">
+      <div class="ap-name">Zombie Items</div>
+      <div class="ap-evidence">5 perpetually incomplete items: RHOAIENG-45708 (In 5+ sprints); RHOAIENG-46729 (In 3+ sprints); RHOAIENG-48007 (In 3+ sprints).</div>
+      <div class="ap-impact">Creates psychological drag, clutters the board, masks the team's actual WIP.</div>
+    </div>
+    <div class="antipattern-card">
+      <div class="ap-name">Scope Instability</div>
+      <div class="ap-evidence">7 of 26 items (27%) created in the last 14 days, suggesting ongoing scope addition.</div>
+      <div class="ap-impact">Late-created items dilute focus on items committed at sprint start. Sprint scope is not protected.</div>
+    </div>
+  </div>
+</div>
+
+
+<!-- 5. Flow Improvement Opportunities -->
+<div class="section" id="section-5">
+  <div class="section-number">Section 5</div>
+  <h2>Flow Improvement Opportunities</h2>
+
+  <h3>Cycle Time Reduction</h3>
+  <ul>
+    <li><strong>Remove sprint queue time.</strong> 9 items in &lsquo;New&rsquo; were never started. Only add items when the team has capacity to start within 3 days.</li>
+    <li><strong>Implement WIP limits</strong> (2&ndash;3 active items per engineer).</li>
+    <li><strong>Address long-running items.</strong> RHOAIENG-45708 (60d), RHOAIENG-46729 (54d), RHOAIENG-48007 (46d) need focused completion or re-scoping.</li>
+  </ul>
+
+  <h3>Throughput Improvement</h3>
+  <ul>
+    <li><strong>Focus on items closest to Done.</strong> RHOAIENG-45708 (3pts, Review), RHOAIENG-49222 (4pts, Testing), RHOAIENG-51121 (4pts, Review), RHOAIENG-52429 (6pts, Review) &mdash; prioritize reviewer/tester time.</li>
+    <li><strong>Remove zombie items.</strong> RHOAIENG-45708, RHOAIENG-46729, RHOAIENG-48007 should exit the sprint immediately.</li>
+  </ul>
+
+  <h3>Delivery Predictability</h3>
+  <ul>
+    <li><strong>Right-size commitment</strong> to ~10 points with a 10% unplanned buffer.</li>
+    <li><strong>Track external dependencies separately.</strong> Items blocked by other teams on a dependency board.</li>
+    <li><strong>Track flow metrics:</strong> completion ratio, cycle time, WIP count, carryover rate.</li>
+  </ul>
+</div>
+
+
+<!-- 6. Backlog Improvement Opportunities -->
+<div class="section" id="section-6">
+  <div class="section-number">Section 6</div>
+  <h2>Backlog Improvement Opportunities</h2>
+
+  <h3>Structural Issues</h3>
+  <ol>
+    <li><strong>Low acceptance criteria coverage</strong> &mdash; 0/26 items use the AC field.</li>
+    <li><strong>Priority field underused</strong> &mdash; 77% of items have &lsquo;Undefined&rsquo; priority.</li>
+    <li><strong>Issue type uniformity</strong> &mdash; 25 of 26 items are Tasks.</li>
+    <li><strong>Unestimated work</strong> &mdash; 2 items at 0 points.</li>
+  </ol>
+
+  <h3>Recommendations</h3>
+  <ul>
+    <li><strong>Adopt a standard description template.</strong> Overview, Technical Details, Acceptance Criteria (checklist), Dependencies.</li>
+    <li><strong>Establish a &lsquo;no AC, no sprint&rsquo; gate.</strong> Every item must have testable acceptance criteria.</li>
+    <li><strong>Use issue types deliberately.</strong> Story = feature, Bug = defect, Task = technical, Spike = investigation.</li>
+    <li><strong>Conduct a backlog cleanup session (60 min):</strong> remove items older than 3 sprints, add AC to top 15 items, estimate all items, set priorities.</li>
+    <li><strong>Two-sprint expiry rule.</strong> No automatic carryover &mdash; re-scope, re-assign, or remove.</li>
+  </ul>
+</div>
+
+<!-- 7. Top 5 Actions -->
+<div class="section" id="section-7">
+  <div class="section-number">Section 7</div>
+  <h2>Top 5 Actions for Sprint 28</h2>
+
+  <div class="action-grid">
+    <div class="action-card">
+      <div class="action-num">1</div>
+      <div>
+        <div class="action-title">Right-size the sprint commitment</div>
+        <div class="action-impact">Target ~10 story points. Use zero-based loading. Enable the team to experience completing a sprint.</div>
+        <div class="action-evidence">73 pts committed vs. 2 delivered (3%). 9 items never started.</div>
+      </div>
+    </div>
+    <div class="action-card">
+      <div class="action-num">2</div>
+      <div>
+        <div class="action-title">Remove zombie items</div>
+        <div class="action-impact">Move RHOAIENG-45708, RHOAIENG-46729, RHOAIENG-48007 out of the sprint. Reduces noise, creates focus, reclaims board clarity.</div>
+        <div class="action-evidence">5 items with 5+ sprints or 90+ days without completion.</div>
+      </div>
+    </div>
+    <div class="action-card">
+      <div class="action-num">3</div>
+      <div>
+        <div class="action-title">Establish acceptance criteria standard</div>
+        <div class="action-impact">Every item must have testable AC before entering the sprint. Provides objective 'done' criteria.</div>
+        <div class="action-evidence">0/26 items have AC.</div>
+      </div>
+    </div>
+    <div class="action-card">
+      <div class="action-num">4</div>
+      <div>
+        <div class="action-title">Implement WIP limits and reduce sprint loading</div>
+        <div class="action-impact">Only pull items when the team has capacity. 9 items never started.</div>
+        <div class="action-evidence">9 items in 'New' status represent wasted commitment.</div>
+      </div>
+    </div>
+    <div class="action-card">
+      <div class="action-num">5</div>
+      <div>
+        <div class="action-title">Set priority on all sprint items</div>
+        <div class="action-impact">Enables data-driven trade-off decisions at sprint end.</div>
+        <div class="action-evidence">6/26 items have defined priority.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 8. Coaching Notes -->
+<div class="section" id="section-8">
+  <div class="section-number">Section 8</div>
+  <h2>Agile Coaching Notes</h2>
+
+  <div class="coaching-card">
+    <div class="coaching-card-header">For the Sprint Retrospective</div>
+    <div class="coaching-card-body">
+      <p><strong>Suggested focus areas:</strong></p>
+      <ul>
+        <li>"We committed 73 points and delivered 2. What would a sprint look like where we complete 85% of what we commit?"</li>
+        <li>"RHOAIENG-45708 has been in our sprint for 5+ sprints. What would it take to either define it or remove it?"</li>
+      </ul>
+      <p><strong>Facilitation tips:</strong></p>
+      <ul>
+        <li>Frame the 3% completion rate as a <em>planning</em> problem, not a <em>performance</em> problem.</li>
+        <li>Lead with the positive: highlight completed items and successful delivery patterns.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="coaching-card">
+    <div class="coaching-card-header">For Sprint Planning</div>
+    <div class="coaching-card-body">
+      <p><strong>Key principles:</strong></p>
+      <ul>
+        <li><strong>Zero-based loading:</strong> Start with an empty sprint. Pull items deliberately.</li>
+        <li><strong>Capacity:</strong> ~10 points. Subtract 3&ndash;5 for unplanned work.</li>
+        <li><strong>Readiness gate:</strong> Every item must have AC, estimate (&gt;0), owner, and priority.</li>
+        <li><strong>Dependency check:</strong> Blocked items enter only when unblocked.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="coaching-card">
+    <div class="coaching-card-header">For Backlog Refinement</div>
+    <div class="coaching-card-body">
+      <p><strong>Session structure (60 min):</strong></p>
+      <ol>
+        <li><strong>Cleanup (15 min):</strong> Remove items older than 3 sprints. Review all zombie items.</li>
+        <li><strong>AC writing (20 min):</strong> Add testable acceptance criteria to top 15 backlog items.</li>
+        <li><strong>Estimation (15 min):</strong> Estimate all items entering next sprint. No 0-point items.</li>
+        <li><strong>Priority setting (10 min):</strong> Set priority on all unset items. Use Critical/Major/Normal only.</li>
+      </ol>
+      <p><strong>Definition of Ready checklist:</strong></p>
+      <ul>
+        <li>Has testable acceptance criteria</li>
+        <li>Has non-zero story point estimate</li>
+        <li>Has an assigned owner</li>
+        <li>Has priority set (not Undefined)</li>
+        <li>Has no unresolved external dependencies</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- Appendix -->
+<div class="section" id="section-appendix">
+  <div class="section-number">Appendix</div>
+  <h2>Sprint Item Tracker</h2>
+
+  <div class="appendix-table" style="overflow-x: auto;">
+    <table>
+      <thead>
+        <tr>
+          <th>Issue Key</th>
+          <th>Type</th>
+          <th>Status</th>
+          <th>Pts</th>
+          <th>Assignee</th>
+          <th>Age</th>
+          <th>Sprint History</th>
+          <th>Notes</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><a href="https://redhat.atlassian.net/browse/RHOAIENG-53408" target="_blank" class="issue-key">RHOAIENG-53408</a></td>
+          <td>Story</td>
+          <td><span class="status review">Review</span></td>
+          <td>4</td>
+          <td>Abhijeet Dhumal</td>
+          <td>0d</td>
+          <td><div class="sprint-pills"><span class="sprint-pill current">S27</span></div></td>
+          <td class="notes-col">Iterate and address reviews on the Kubeflow SDK update_runti</td>
+        </tr>
+        <tr>
+          <td><a href="https://redhat.atlassian.net/browse/RHOAIENG-52867" target="_blank" class="issue-key">RHOAIENG-52867</a></td>
+          <td>Task</td>
+          <td><span class="status review">Review</span></td>
+          <td>1</td>
+          <td>Esa Fazal</td>
+          <td>4d</td>
+          <td><div class="sprint-pills"><span class="sprint-pill current">S27</span></div></td>
+          <td class="notes-col">Agree with docs team on documentation format: KB articles vs</td>
+        </tr>
+        <tr>
+          <td><a href="https://redhat.atlassian.net/browse/RHOAIENG-52538" target="_blank" class="issue-key">RHOAIENG-52538</a></td>
+          <td>Task</td>
+          <td><span class="status inprogress">In Progress</span></td>
+          <td>3</td>
+          <td>Sridhar Pillai</td>
+          <td>5d</td>
+          <td><div class="sprint-pills"><span class="sprint-pill current">S27</span></div></td>
+          <td class="notes-col">Kubeflow trainer documentation website </td>
+        </tr>
+        <tr>
+          <td><a href="https://redhat.atlassian.net/browse/RHOAIENG-52429" target="_blank" class="issue-key">RHOAIENG-52429</a></td>
+          <td>Task</td>
+          <td><span class="status review">Review</span></td>
+          <td>6</td>
+          <td>Abhijeet Dhumal</td>
+          <td>6d</td>
+          <td><div class="sprint-pills"><span class="sprint-pill current">S27</span></div></td>
+          <td class="notes-col">Iterate and address reviews on the HuggingFace Transformers </td>
+        </tr>
+        <tr>
+          <td><a href="https://redhat.atlassian.net/browse/RHOAIENG-52491" target="_blank" class="issue-key">RHOAIENG-52491</a></td>
+          <td>Task</td>
+          <td><span class="status resolved">Resolved</span></td>
+          <td>2</td>
+          <td>Esa Fazal</td>
+          <td>6d</td>
+          <td><div class="sprint-pills"><span class="sprint-pill current">S27</span></div></td>
+          <td class="notes-col">Write release notes for KFT Model Checkpointing — RHOAI 3.4 </td>
+        </tr>
+        <tr>
+          <td><a href="https://redhat.atlassian.net/browse/RHOAIENG-52498" target="_blank" class="issue-key">RHOAIENG-52498</a></td>
+          <td>Task</td>
+          <td><span class="status new">New</span></td>
+          <td>5</td>
+          <td>Esa Fazal</td>
+          <td>6d</td>
+          <td><div class="sprint-pills"><span class="sprint-pill current">S27</span></div></td>
+          <td class="notes-col">Write developer blog post for KFT Model Checkpointing featur</td>
+        </tr>
+        <tr>
+          <td><a href="https://redhat.atlassian.net/browse/RHOAIENG-52033" target="_blank" class="issue-key">RHOAIENG-52033</a></td>
+          <td>Task</td>
+          <td><span class="status inprogress">In Progress</span></td>
+          <td>5</td>
+          <td>Hari Haran Rathinakumar</td>
+          <td>11d</td>
+          <td><div class="sprint-pills"><span class="sprint-pill current">S27</span></div></td>
+          <td class="notes-col">SPIKE: Investigate bin-packing with upstream Kubernetes sche</td>
+        </tr>
+        <tr>
+          <td><a href="https://redhat.atlassian.net/browse/RHOAIENG-51084" target="_blank" class="issue-key">RHOAIENG-51084</a></td>
+          <td>Task</td>
+          <td><span class="status new">New</span></td>
+          <td>1</td>
+          <td>Shilpa Chugh</td>
+          <td>18d</td>
+          <td><div class="sprint-pills"><span class="sprint-pill">S26</span><span class="sprint-pill current">S27</span></div></td>
+          <td class="notes-col">Issue created 2026-02-25 by Rob Bell. Description, team (AIP Training Kubeflow),</td>
+        </tr>
+        <tr>
+          <td><a href="https://redhat.atlassian.net/browse/RHOAIENG-51102" target="_blank" class="issue-key">RHOAIENG-51102</a></td>
+          <td>Task</td>
+          <td><span class="status inprogress">In Progress</span></td>
+          <td>5</td>
+          <td>Shilpa Chugh</td>
+          <td>18d</td>
+          <td><div class="sprint-pills"><span class="sprint-pill current">S27</span></div></td>
+          <td class="notes-col">[SPIKE] Choose algorithm and dataset for a real-world repres</td>
+        </tr>
+        <tr>
+          <td><a href="https://redhat.atlassian.net/browse/RHOAIENG-51103" target="_blank" class="issue-key">RHOAIENG-51103</a></td>
+          <td>Task</td>
+          <td><span class="status new">New</span></td>
+          <td>5</td>
+          <td>Shilpa Chugh</td>
+          <td>18d</td>
+          <td><div class="sprint-pills"><span class="sprint-pill current">S27</span></div></td>
+          <td class="notes-col">Create real-world representative benchmark</td>
+        </tr>
+        <tr>
+          <td><a href="https://redhat.atlassian.net/browse/RHOAIENG-51121" target="_blank" class="issue-key">RHOAIENG-51121</a></td>
+          <td>Task</td>
+          <td><span class="status review">Review</span></td>
+          <td>4</td>
+          <td>Abhijeet Dhumal</td>
+          <td>18d</td>
+          <td><div class="sprint-pills"><span class="sprint-pill">S26</span><span class="sprint-pill current">S27</span></div></td>
+          <td class="notes-col">Created 2026-02-26. Activity Type set to 'Tech Debt & Quality' then changed to '</td>
+        </tr>
+        <tr>
+          <td><a href="https://redhat.atlassian.net/browse/RHOAIENG-50650" target="_blank" class="issue-key">RHOAIENG-50650</a></td>
+          <td>Task</td>
+          <td><span class="status resolved">Closed</span></td>
+          <td>0</td>
+          <td>Christoph Goern</td>
+          <td>20d</td>
+          <td><div class="sprint-pills"><span class="sprint-pill">S27</span><span class="sprint-pill current">S26</span></div></td>
+          <td class="notes-col">Created 2026-02-24 as a clone of RHOAIENG-45707. Esa Fazal unassigned herself an</td>
+        </tr>
+        <tr>
+          <td><a href="https://redhat.atlassian.net/browse/RHOAIENG-50576" target="_blank" class="issue-key">RHOAIENG-50576</a></td>
+          <td>Task</td>
+          <td><span class="status resolved">Resolved</span></td>
+          <td>0</td>
+          <td>Karel Suta</td>
+          <td>21d</td>
+          <td><div class="sprint-pills"><span class="sprint-pill current">S27</span></div></td>
+          <td class="notes-col">[Training Kubeflow] Phase1 Quality Gate Revision</td>
+        </tr>
+        <tr>
+          <td><a href="https://redhat.atlassian.net/browse/RHOAIENG-49498" target="_blank" class="issue-key">RHOAIENG-49498</a></td>
+          <td>Task</td>
+          <td><span class="status inprogress">In Progress</span></td>
+          <td>2</td>
+          <td>Esa Fazal</td>
+          <td>32d</td>
+          <td><div class="sprint-pills"><span class="sprint-pill">S25</span><span class="sprint-pill current">S27</span><span class="sprint-pill">S26</span><span class="sprint-pill current">S27</span></div></td>
+          <td class="notes-col">Status: New -> In Progress (Mar 10) -> Backlog (Mar 12) -> In Progress (Mar 16).</td>
+        </tr>
+        <tr>
+          <td><a href="https://redhat.atlassian.net/browse/RHOAIENG-49222" target="_blank" class="issue-key">RHOAIENG-49222</a></td>
+          <td>Task</td>
+          <td><span class="status testing">Testing</span></td>
+          <td>4</td>
+          <td>Kapil Nema</td>
+          <td>33d</td>
+          <td><div class="sprint-pills"><span class="sprint-pill current">S27</span></div></td>
+          <td class="notes-col">Make the MPI jobs run in KFTv2 using ROCm running on OpenShi</td>
+        </tr>
+        <tr>
+          <td><a href="https://redhat.atlassian.net/browse/RHOAIENG-49099" target="_blank" class="issue-key">RHOAIENG-49099</a></td>
+          <td>Task</td>
+          <td><span class="status new">New</span></td>
+          <td>2</td>
+          <td>Unassigned</td>
+          <td>34d</td>
+          <td><div class="sprint-pills"><span class="sprint-pill current">S27</span></div></td>
+          <td class="notes-col">Add ClusterTrainingRuntime CRs for OpenMPI (CUDA and ROCm)</td>
+        </tr>
+        <tr>
+          <td><a href="https://redhat.atlassian.net/browse/RHOAIENG-49100" target="_blank" class="issue-key">RHOAIENG-49100</a></td>
+          <td>Task</td>
+          <td><span class="status new">Backlog</span></td>
+          <td>2</td>
+          <td>Kapil Nema</td>
+          <td>34d</td>
+          <td><div class="sprint-pills"><span class="sprint-pill current">S27</span></div></td>
+          <td class="notes-col">[SPIKE] Verify MPI TrainJob runs with new runtime and image</td>
+        </tr>
+        <tr>
+          <td><a href="https://redhat.atlassian.net/browse/RHOAIENG-49106" target="_blank" class="issue-key">RHOAIENG-49106</a></td>
+          <td>Task</td>
+          <td><span class="status new">New</span></td>
+          <td>2</td>
+          <td>Unassigned</td>
+          <td>34d</td>
+          <td><div class="sprint-pills"><span class="sprint-pill current">S27</span></div></td>
+          <td class="notes-col">Document benchmark results for release sign-off and future c</td>
+        </tr>
+        <tr>
+          <td><a href="https://redhat.atlassian.net/browse/RHOAIENG-48658" target="_blank" class="issue-key">RHOAIENG-48658</a></td>
+          <td>Task</td>
+          <td><span class="status new">New</span></td>
+          <td>6</td>
+          <td>Karel Suta</td>
+          <td>40d</td>
+          <td><div class="sprint-pills"><span class="sprint-pill current">S27</span></div></td>
+          <td class="notes-col">[SPIKE] Investigate GPU partitioning capabilities and its us</td>
+        </tr>
+        <tr>
+          <td><a href="https://redhat.atlassian.net/browse/RHOAIENG-48468" target="_blank" class="issue-key">RHOAIENG-48468</a></td>
+          <td>Task</td>
+          <td><span class="status inprogress">In Progress</span></td>
+          <td>2</td>
+          <td>Kapil Nema</td>
+          <td>41d</td>
+          <td><div class="sprint-pills"><span class="sprint-pill current">S27</span></div></td>
+          <td class="notes-col">Created 2026-02-03 in New status with Critical priority. On 2026-03-06, Denise H</td>
+        </tr>
+        <tr>
+          <td><a href="https://redhat.atlassian.net/browse/RHOAIENG-48297" target="_blank" class="issue-key">RHOAIENG-48297</a></td>
+          <td>Task</td>
+          <td><span class="status new">New</span></td>
+          <td>2</td>
+          <td>Kapil Nema</td>
+          <td>42d</td>
+          <td><div class="sprint-pills"><span class="sprint-pill current">S27</span></div></td>
+          <td class="notes-col">CLONE - Onboard to ODH Build - 2 week notice! </td>
+        </tr>
+        <tr>
+          <td><a href="https://redhat.atlassian.net/browse/RHOAIENG-48298" target="_blank" class="issue-key">RHOAIENG-48298</a></td>
+          <td>Task</td>
+          <td><span class="status new">New</span></td>
+          <td>2</td>
+          <td>Kapil Nema</td>
+          <td>42d</td>
+          <td><div class="sprint-pills"><span class="sprint-pill current">S27</span></div></td>
+          <td class="notes-col">CLONE - Security requirements</td>
+        </tr>
+        <tr>
+          <td><a href="https://redhat.atlassian.net/browse/RHOAIENG-48007" target="_blank" class="issue-key">RHOAIENG-48007</a></td>
+          <td>Task</td>
+          <td><span class="status inprogress">In Progress</span></td>
+          <td>1</td>
+          <td>Shilpa Chugh</td>
+          <td>46d</td>
+          <td><div class="sprint-pills"><span class="sprint-pill">S25</span><span class="sprint-pill">S26</span><span class="sprint-pill current">S27</span></div></td>
+          <td class="notes-col">Created 2026-01-29 by Abhijeet Dhumal (cloned from RHOAIENG-42362). Summary rena</td>
+        </tr>
+        <tr>
+          <td><a href="https://redhat.atlassian.net/browse/RHOAIENG-47874" target="_blank" class="issue-key">RHOAIENG-47874</a></td>
+          <td>Task</td>
+          <td><span class="status resolved">Closed</span></td>
+          <td>0</td>
+          <td>Esa Fazal</td>
+          <td>47d</td>
+          <td><div class="sprint-pills"><span class="sprint-pill current">S27</span></div></td>
+          <td class="notes-col">Issue was cloned from RHOAIENG-47674. Summary changed from '[SDK] Make checkpoin</td>
+        </tr>
+        <tr>
+          <td><a href="https://redhat.atlassian.net/browse/RHOAIENG-46729" target="_blank" class="issue-key">RHOAIENG-46729</a></td>
+          <td>Task</td>
+          <td><span class="status inprogress">In Progress</span></td>
+          <td>4</td>
+          <td>Karel Suta</td>
+          <td>54d</td>
+          <td><div class="sprint-pills"><span class="sprint-pill">S24</span><span class="sprint-pill">S26</span><span class="sprint-pill current">S27</span></div></td>
+          <td class="notes-col">Created 2026-01-21. Initially placed in Sprint 24, removed from Sprint 24 on Jan</td>
+        </tr>
+        <tr>
+          <td><a href="https://redhat.atlassian.net/browse/RHOAIENG-45708" target="_blank" class="issue-key">RHOAIENG-45708</a></td>
+          <td>Task</td>
+          <td><span class="status review">Review</span></td>
+          <td>3</td>
+          <td>Hari Haran Rathinakumar</td>
+          <td>60d</td>
+          <td><div class="sprint-pills"><span class="sprint-pill">S24</span><span class="sprint-pill">S25</span><span class="sprint-pill current">S27</span><span class="sprint-pill">S26</span><span class="sprint-pill current">S27</span></div></td>
+          <td class="notes-col">Status transitions: New -> In Progress (Mar 9) -> Review (Mar 11). Assignee chan</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+</div><!-- /content -->
+
+<footer class="report-footer">
+  This report is intended to support the team's continuous improvement journey. The observations and recommendations are systemic in nature and should be discussed collaboratively. The goal is not to assign blame but to identify process improvements that enable the team to deliver more predictably, with higher quality, and with less stress.
+</footer>
+
+</div><!-- /page-main -->
+</div><!-- /page-wrapper -->
+
+<button class="btn-print" onclick="window.print()" title="Export to PDF via Print">Export PDF</button>
+
+<script>
+function toggleKpiDetail(kpiId) {
+  var panel = document.getElementById('kpi-detail-' + kpiId);
+  var card = document.querySelector('[data-kpi="' + kpiId + '"]');
+  var wasActive = panel.classList.contains('active');
+  // Close all open panels and deselect all cards
+  document.querySelectorAll('.kpi-detail.active').forEach(function(p) {
+    p.classList.remove('active');
+  });
+  document.querySelectorAll('.kpi-card.selected').forEach(function(c) {
+    c.classList.remove('selected');
+  });
+  // Toggle: if it wasn't active, open it
+  if (!wasActive) {
+    panel.classList.add('active');
+    card.classList.add('selected');
+  }
+}
+
+// Scroll-spy: highlight active section in sidebar TOC
+(function() {
+  var tocLinks = document.querySelectorAll('.toc a[href^="#section"]');
+  if (!tocLinks.length) return;
+  var sections = [];
+  tocLinks.forEach(function(link) {
+    var id = link.getAttribute('href').substring(1);
+    var el = document.getElementById(id);
+    if (el) sections.push({ el: el, link: link });
+  });
+  function onScroll() {
+    var scrollY = window.scrollY + 80;
+    var current = null;
+    for (var i = 0; i < sections.length; i++) {
+      if (sections[i].el.offsetTop <= scrollY) {
+        current = sections[i];
+      }
+    }
+    tocLinks.forEach(function(l) { l.classList.remove('active'); });
+    if (current) current.link.classList.add('active');
+  }
+  window.addEventListener('scroll', onScroll, { passive: true });
+  onScroll();
+})();
+</script>
+
+</body>
+</html>

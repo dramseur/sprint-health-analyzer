@@ -1,0 +1,26 @@
+# Reports (generated output)
+reports/
+*.html
+!examples/sample_report.html
+
+# Sprint data (contains team-specific info)
+*.csv
+*.json
+!examples/*.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.eggs/
+*.egg-info/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
