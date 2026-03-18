@@ -1482,18 +1482,53 @@ def detect_observations(items, metrics, enrichment=None):
             'severity': 'warning' if len(escalated) > 1 else 'info',
         })
 
-    # 5. Onboarding/sub-task clusters distorting metrics
-    subtasks = [i for i in items if i['type'].lower() in ('sub-task', 'subtask')]
-    if subtasks and len(subtasks) > len(items) * 0.4:
-        zero_pt_subs = [i for i in subtasks if i['points'] == 0]
+    # 5. Onboarding/automation items in sprint
+    onboarding = m.get('onboarding_items', [])
+    if onboarding:
+        onb_done = [i for i in onboarding if is_done(i['status'])]
+        onb_not_done = [i for i in onboarding if not is_done(i['status'])]
+        # Group by parent to identify distinct onboarding sets
+        parents = set()
+        assignees = set()
+        for i in onboarding:
+            p = i.get('parent_key') or i.get('blockers', [None])[0] if i.get('blockers') else None
+            assignees.add(i.get('assignee', ''))
+            if p:
+                parents.add(p)
+        assignee_str = ", ".join(a for a in sorted(assignees) if a and a != '(Unassigned)')
+
+        detail = (
+            f"{len(onboarding)} onboarding/automation sub-tasks detected in the sprint "
+            f"({len(onboarding)}/{len(items)} items, {len(onboarding)/len(items):.0%} of total). "
+            f"{len(onb_done)} completed, {len(onb_not_done)} still open. "
+            f"All have 0 story points and are excluded from cycle time statistics. "
+        )
+        if assignee_str:
+            detail += f"Assignees: {assignee_str}. "
+        detail += (
+            "These items inflate the sprint item count and distort delivery metrics. "
+            "Consider tracking onboarding in a dedicated board or epic rather than "
+            "mixing them with sprint deliverables."
+        )
         observations.append({
-            'title': 'Sub-Task Cluster Distorting Metrics',
-            'detail': f"{len(subtasks)} of {len(items)} items ({len(subtasks)/len(items):.0%}) are sub-tasks. "
-                      f"{len(zero_pt_subs)} have 0 points. Large sub-task clusters inflate item counts "
-                      f"and distort delivery rates without representing independent deliverables.",
-            'items': [],
-            'severity': 'warning',
+            'title': 'Onboarding Items in Sprint',
+            'detail': detail,
+            'items': [i['key'] for i in onboarding[:5]],
+            'severity': 'warning' if len(onboarding) > len(items) * 0.3 else 'info',
         })
+    else:
+        # Generic sub-task cluster check (when no onboarding detected)
+        subtasks = [i for i in items if i['type'].lower() in ('sub-task', 'subtask')]
+        if subtasks and len(subtasks) > len(items) * 0.4:
+            zero_pt_subs = [i for i in subtasks if i['points'] == 0]
+            observations.append({
+                'title': 'Sub-Task Cluster Distorting Metrics',
+                'detail': f"{len(subtasks)} of {len(items)} items ({len(subtasks)/len(items):.0%}) are sub-tasks. "
+                          f"{len(zero_pt_subs)} have 0 points. Large sub-task clusters inflate item counts "
+                          f"and distort delivery rates without representing independent deliverables.",
+                'items': [],
+                'severity': 'warning',
+            })
 
     # 6. Sprint manager concentration (one person doing most sprint admin)
     managers = {}
