@@ -112,12 +112,15 @@ def parse_date(s):
     if not s or not s.strip():
         return None
     s = s.strip()
+    # Strip timezone suffixes to always produce naive datetimes
+    s = re.sub(r'[Zz]$', '', s)
+    s = re.sub(r'[+-]\d{2}:?\d{2}$', '', s).strip()
     # Try common formats
     for fmt in [
         "%Y/%m/%d %I:%M %p",   # 2026/03/03 11:18 AM
-        "%Y-%m-%dT%H:%M:%S.%f%z",  # ISO format with tz
-        "%Y-%m-%dT%H:%M:%S.%f",    # ISO format without tz (after +zone strip)
+        "%Y-%m-%dT%H:%M:%S.%f",    # ISO format with fractional
         "%Y-%m-%dT%H:%M:%S",       # ISO format no fractional
+        "%Y-%m-%d %H:%M:%S.%f",
         "%Y-%m-%d %H:%M:%S",
         "%Y-%m-%d",
         "%d/%b/%y %I:%M %p",   # 03/Mar/26 11:18 AM
@@ -126,13 +129,14 @@ def parse_date(s):
         "%d/%m/%Y",
     ]:
         try:
-            return datetime.strptime(s.split("+")[0].strip(), fmt)
+            return datetime.strptime(s, fmt)
         except ValueError:
             continue
     # Last resort: try dateutil
     try:
         from dateutil.parser import parse as du_parse
-        return du_parse(s)
+        result = du_parse(s)
+        return result.replace(tzinfo=None) if result.tzinfo else result
     except Exception:
         return None
 
@@ -655,6 +659,7 @@ def parse_mcp_json(filepath, target_sprint=None):
 
         # Sprint history -- customfield_10020
         sprints_raw = []
+        sprint_start_date = None
         sprint_data = _get_custom(issue, 'customfield_10020')
         if sprint_data and isinstance(sprint_data, list):
             for s in sprint_data:
@@ -662,6 +667,10 @@ def parse_mcp_json(filepath, target_sprint=None):
                     name = s.get('name', '')
                     if name:
                         sprints_raw.append(name)
+                        # Capture start date from the latest/active sprint
+                        sd = s.get('startDate')
+                        if sd and (s.get('state') == 'active' or sprint_start_date is None):
+                            sprint_start_date = parse_date(sd)
                 elif isinstance(s, str) and s:
                     sprints_raw.append(s)
 
@@ -740,7 +749,8 @@ def parse_mcp_json(filepath, target_sprint=None):
 
         # Dates
         created_dt = parse_date(issue.get('created', ''))
-        resolved_dt = parse_date(issue.get('resolved', ''))
+        resolved_dt = parse_date(issue.get('resolved', '') or issue.get('resolutiondate', '') or '')
+        updated_dt = parse_date(issue.get('updated', ''))
         age_days = (TODAY - created_dt).days if created_dt else 0
         cycle_days = None
         if resolved_dt and created_dt:
@@ -770,6 +780,8 @@ def parse_mcp_json(filepath, target_sprint=None):
             'blockers': blockers,
             'clones': clones,
             'description': desc_text,
+            'updated': updated_dt,
+            'sprint_start': sprint_start_date,
         }
         items.append(item)
 
@@ -928,17 +940,21 @@ def compute_metrics(items, enrichment=None):
     m['status_groups'] = dict(status_groups)
 
     # --- Cycle times ---
-    # Determine sprint start date: use the earliest created date among items
-    # that were created during the sprint window (items created in the last 30 days
-    # before the sprint, to avoid old carryover items pulling the date back)
-    created_dates = sorted([i['created'] for i in items if i['created']])
-    if created_dates:
-        # Use the 25th percentile of creation dates as sprint start approximation
-        # This avoids old carryover items skewing the start date
-        idx = max(0, len(created_dates) // 4)
-        sprint_start_approx = created_dates[idx]
-    else:
-        sprint_start_approx = None
+    # Determine sprint start date: prefer actual sprint start from Jira sprint objects,
+    # fall back to 25th percentile of creation dates
+    sprint_start_approx = None
+    for item in items:
+        sd = item.get('sprint_start')
+        if sd:
+            sprint_start_approx = sd
+            break
+    if sprint_start_approx is None:
+        created_dates = sorted([i['created'] for i in items if i['created']])
+        if created_dates:
+            idx = max(0, len(created_dates) // 4)
+            sprint_start_approx = created_dates[idx]
+
+    m['sprint_start_approx'] = sprint_start_approx
 
     # For resolved items, compute cycle time as:
     # Resolved - max(Created, Sprint Start)
@@ -948,7 +964,12 @@ def compute_metrics(items, enrichment=None):
             flow_start = max(item['created'], sprint_start_approx)
             item['cycle_days'] = max(0, (item['resolved'] - flow_start).days)
 
-    cycle_times = [(i['key'], i['cycle_days']) for i in done_items if i['cycle_days'] is not None]
+    # Exclude onboarding/automation items from cycle time stats (they distort averages)
+    onboarding_keys = {i['key'] for i in onboarding_items}
+    cycle_times_all = [(i['key'], i['cycle_days']) for i in done_items if i['cycle_days'] is not None]
+    cycle_times = [(k, ct) for k, ct in cycle_times_all if k not in onboarding_keys]
+    if not cycle_times:
+        cycle_times = cycle_times_all  # fall back to all if no non-onboarding items
     if cycle_times:
         ct_values = [ct for _, ct in cycle_times]
         m['avg_cycle_time'] = round(sum(ct_values) / len(ct_values), 1)
@@ -1176,6 +1197,63 @@ def compute_metrics(items, enrichment=None):
                 item['blockers'] = edata['blockers']
             if 'repurposed' in edata:
                 item['repurposed'] = edata['repurposed']
+
+            # --- Infer resolved date from changelog when missing ---
+            if item['resolved'] is None and is_done(item['status']):
+                changelog = edata.get('changelog_summary', '')
+                # Look for last transition to a done state with a date
+                done_matches = re.findall(
+                    r'(?:->|→|to)\s*(?:Closed|Done|Resolved)\s*(?:on\s+)?(\d{4}-\d{2}-\d{2})',
+                    changelog, re.IGNORECASE
+                )
+                if not done_matches:
+                    # Try pattern like "Closed (Done) on 2026-03-09"
+                    done_matches = re.findall(
+                        r'(?:Closed|Done|Resolved)\s*(?:\([^)]*\)\s*)?(?:on\s+)?(\d{4}-\d{2}-\d{2})',
+                        changelog, re.IGNORECASE
+                    )
+                if not done_matches:
+                    # Try "closed on 2026-02-06" pattern
+                    done_matches = re.findall(
+                        r'closed\s+(?:on\s+)?(\d{4}-\d{2}-\d{2})',
+                        changelog, re.IGNORECASE
+                    )
+                if done_matches:
+                    resolved_dt = parse_date(done_matches[-1])  # use last match
+                    if resolved_dt:
+                        item['resolved'] = resolved_dt
+                        if item['created']:
+                            item['cycle_days'] = max(0, (resolved_dt - item['created']).days)
+                # Fallback: use updated date if status is done
+                if item['resolved'] is None and item.get('updated'):
+                    updated_str = item.get('updated')
+                    if isinstance(updated_str, str):
+                        item['resolved'] = parse_date(updated_str)
+                    elif hasattr(updated_str, 'date'):
+                        item['resolved'] = updated_str
+
+    # --- Recompute cycle times after enrichment ---
+    done_items = [i for i in items if is_done(i['status'])]
+    sprint_start_approx = m.get('sprint_start_approx')
+
+    for item in done_items:
+        if item['resolved'] and item['created'] and sprint_start_approx:
+            flow_start = max(item['created'], sprint_start_approx)
+            item['cycle_days'] = max(0, (item['resolved'] - flow_start).days)
+
+    # Exclude onboarding items from cycle time stats (they distort averages)
+    onboarding_keys = {i['key'] for i in m.get('onboarding_items', [])}
+    cycle_times_all = [(i['key'], i['cycle_days']) for i in done_items if i['cycle_days'] is not None]
+    cycle_times = [(k, ct) for k, ct in cycle_times_all if k not in onboarding_keys]
+    if not cycle_times:
+        cycle_times = cycle_times_all  # fall back if no non-onboarding items
+    if cycle_times:
+        ct_values = [ct for _, ct in cycle_times]
+        m['avg_cycle_time'] = round(sum(ct_values) / len(ct_values), 1)
+        m['median_cycle_time'] = sorted(ct_values)[len(ct_values) // 2]
+        m['min_cycle_time'] = min(ct_values)
+        m['max_cycle_time'] = max(ct_values)
+        m['cycle_times'] = cycle_times
 
     # --- Recompute carryover metrics after enrichment updates ---
     m['multi_sprint_items'] = [i for i in items if i['sprint_count'] >= 2]
