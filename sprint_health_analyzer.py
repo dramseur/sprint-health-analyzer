@@ -162,6 +162,32 @@ def extract_sprint_number(sprint_str, team_prefix=None):
     return sprint_str
 
 
+def has_acceptance_criteria(text):
+    """Detect whether a description contains acceptance criteria.
+
+    Scans the full text (not truncated) for common AC patterns:
+    - Explicit headers: "Acceptance Criteria", "Definition of Done", "AC:", "DoD"
+    - Structured criteria: "Done when", "Success criteria", "Exit criteria"
+    - Test-oriented: "Acceptance test", "Test case", "Given/When/Then"
+    - Checklist patterns: markdown checkboxes "- [ ]" or "- [x]"
+    """
+    if not text or not text.strip():
+        return False
+    return bool(re.search(
+        r'acceptance\s*criteria'
+        r'|definition\s*of\s*done'
+        r'|done\s*when'
+        r'|acceptance\s*test'
+        r'|success\s*criteria'
+        r'|exit\s*criteria'
+        r'|\bDoD\b'
+        r'|\bAC\s*:'
+        r'|\bgiven\b.*\bwhen\b.*\bthen\b'
+        r'|-\s*\[\s*[xX ]?\s*\]',
+        text, re.IGNORECASE
+    ))
+
+
 def parse_csv(filepath, target_sprint=None):
     """
     Parse a Jira CSV export into a list of item dicts.
@@ -297,12 +323,9 @@ def parse_csv(filepath, target_sprint=None):
             ac_text = val('ac')
             has_ac = bool(ac_text and ac_text.strip())
 
-            # Check description for embedded AC
+            # Check description for acceptance criteria (scan full text before truncating)
             desc_text = val('description')
-            has_ac_in_desc = bool(desc_text and re.search(
-                r'acceptance\s*criteria|definition\s*of\s*done|done\s*when|acceptance\s*test',
-                desc_text, re.IGNORECASE
-            ))
+            has_ac_in_desc = has_acceptance_criteria(desc_text)
 
             # Collect blocker links
             blockers = []
@@ -456,13 +479,10 @@ def fetch_sprint_issues(sprint_id, jira_url, jira_user, jira_token):
             if isinstance(desc_text, dict):
                 # ADF format -- extract text content
                 desc_text = json.dumps(desc_text)
-            desc_text = desc_text[:500]
 
-            # Check for acceptance criteria in description
-            has_ac_in_desc = bool(desc_text and re.search(
-                r'acceptance\s*criteria|definition\s*of\s*done|done\s*when|acceptance\s*test',
-                desc_text, re.IGNORECASE
-            ))
+            # Check for acceptance criteria (scan full text before truncating)
+            has_ac_in_desc = has_acceptance_criteria(desc_text)
+            desc_text = desc_text[:500]
 
             # Sprint history -- customfield_10020 (Cloud), fallback to Agile API fields
             sprints_raw = []
@@ -693,13 +713,10 @@ def parse_mcp_json(filepath, target_sprint=None):
         desc_text = issue.get('description', '') or ''
         if isinstance(desc_text, dict):
             desc_text = json.dumps(desc_text)
-        desc_text = desc_text[:500]
 
-        # Check for AC in description
-        has_ac_in_desc = bool(desc_text and re.search(
-            r'acceptance\s*criteria|definition\s*of\s*done|done\s*when|acceptance\s*test',
-            desc_text, re.IGNORECASE
-        ))
+        # Check for acceptance criteria (scan full text before truncating)
+        has_ac_in_desc = has_acceptance_criteria(desc_text)
+        desc_text = desc_text[:500]
 
         # Issue links
         links = issue.get('issuelinks', issue.get('links', []))
