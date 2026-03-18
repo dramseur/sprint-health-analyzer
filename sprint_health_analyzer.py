@@ -1297,10 +1297,202 @@ def detect_antipatterns(items, metrics, enrichment=None):
 
 
 # ---------------------------------------------------------------------------
+# Additional Observations Detection
+# ---------------------------------------------------------------------------
+
+def detect_observations(items, metrics, enrichment=None):
+    """Detect additional data-driven observations from enrichment data.
+
+    This surfaces noteworthy patterns that don't fit the 8 fixed anti-pattern
+    dimensions but are still valuable for sprint health understanding.
+    Only observations with actual evidence are returned.
+    """
+    if enrichment is None:
+        enrichment = {}
+
+    observations = []
+    m = metrics
+    sprint_start = None
+    # Try to extract sprint start date from items' sprint data
+    for item in items:
+        sd = item.get('sprint_start')
+        if sd:
+            sprint_start = sd
+            break
+
+    # 1. Stale carry-overs (items resolved BEFORE sprint started)
+    if sprint_start:
+        pre_resolved = []
+        for item in items:
+            if is_done(item['status']) and item.get('resolved_date'):
+                try:
+                    res_dt = item['resolved_date']
+                    if isinstance(res_dt, str):
+                        res_dt = res_dt[:10]
+                    start_dt = sprint_start[:10] if isinstance(sprint_start, str) else str(sprint_start)[:10]
+                    if res_dt < start_dt:
+                        pre_resolved.append(item)
+                except (TypeError, ValueError):
+                    pass
+        if pre_resolved:
+            observations.append({
+                'title': 'Pre-Resolved Items Inflating Sprint',
+                'detail': f"{len(pre_resolved)} items were already resolved before the sprint started but remain in the sprint backlog. "
+                          f"These inflate the delivery rate without representing actual sprint work.",
+                'items': [i['key'] for i in pre_resolved[:5]],
+                'severity': 'warning' if len(pre_resolved) > 3 else 'info',
+            })
+
+    # 2. Estimation instability (story points changed multiple times)
+    est_unstable = []
+    for item in items:
+        edata = enrichment.get(item['key'], {})
+        changelog = edata.get('changelog_summary', '')
+        # Count story point change mentions
+        sp_changes = len(re.findall(r'(?:Story [Pp]oints?|story_points?)(?:\s+changed|\s*:)', changelog, re.IGNORECASE))
+        sp_arrows = len(re.findall(r'\d+\s*->\s*\d+', changelog))
+        if sp_changes >= 2 or sp_arrows >= 3:
+            est_unstable.append(item['key'])
+    if est_unstable:
+        observations.append({
+            'title': 'Estimation Instability',
+            'detail': f"{len(est_unstable)} items had their story points changed multiple times during the sprint, "
+                      f"suggesting unclear scope or difficulty in sizing work.",
+            'items': est_unstable[:5],
+            'severity': 'warning' if len(est_unstable) > 2 else 'info',
+        })
+
+    # 3. Sprint bouncing (items added, removed, then re-added)
+    bouncers = []
+    for item in items:
+        edata = enrichment.get(item['key'], {})
+        hist = edata.get('sprint_history', [])
+        changelog = edata.get('changelog_summary', '')
+        # Check for the same sprint appearing multiple times in history
+        if hist:
+            seen = set()
+            for s in hist:
+                if s in seen:
+                    bouncers.append(item['key'])
+                    break
+                seen.add(s)
+        # Also check changelog for "removed" + "added" patterns for same sprint
+        if item['key'] not in bouncers and ('removed' in changelog.lower() and 're-added' in changelog.lower()):
+            bouncers.append(item['key'])
+    if bouncers:
+        observations.append({
+            'title': 'Sprint Bouncing',
+            'detail': f"{len(bouncers)} items were added to a sprint, removed, and then re-added. "
+                      f"This suggests indecision about sprint scope or difficulty in sprint planning.",
+            'items': bouncers[:5],
+            'severity': 'warning',
+        })
+
+    # 4. Priority escalation mid-sprint
+    escalated = []
+    for item in items:
+        edata = enrichment.get(item['key'], {})
+        changelog = edata.get('changelog_summary', '')
+        if re.search(r'(?:priority|Priority).*(?:Blocker|Critical|escalat)', changelog, re.IGNORECASE):
+            escalated.append(item['key'])
+    if escalated:
+        observations.append({
+            'title': 'Mid-Sprint Priority Escalation',
+            'detail': f"{len(escalated)} items had their priority escalated during the sprint. "
+                      f"Frequent escalation disrupts planned work and indicates external pressure.",
+            'items': escalated[:5],
+            'severity': 'warning' if len(escalated) > 1 else 'info',
+        })
+
+    # 5. Onboarding/sub-task clusters distorting metrics
+    subtasks = [i for i in items if i['type'].lower() in ('sub-task', 'subtask')]
+    if subtasks and len(subtasks) > len(items) * 0.4:
+        zero_pt_subs = [i for i in subtasks if i['points'] == 0]
+        observations.append({
+            'title': 'Sub-Task Cluster Distorting Metrics',
+            'detail': f"{len(subtasks)} of {len(items)} items ({len(subtasks)/len(items):.0%}) are sub-tasks. "
+                      f"{len(zero_pt_subs)} have 0 points. Large sub-task clusters inflate item counts "
+                      f"and distort delivery rates without representing independent deliverables.",
+            'items': [],
+            'severity': 'warning',
+        })
+
+    # 6. Sprint manager concentration (one person doing most sprint admin)
+    managers = {}
+    for item in items:
+        edata = enrichment.get(item['key'], {})
+        actors = edata.get('key_actors', {})
+        carried_by = actors.get('carried_by', '')
+        if carried_by:
+            managers[carried_by] = managers.get(carried_by, 0) + 1
+    if managers:
+        total_managed = sum(managers.values())
+        top_manager = max(managers, key=managers.get)
+        top_count = managers[top_manager]
+        if top_count > total_managed * 0.5 and total_managed >= 5:
+            observations.append({
+                'title': 'Sprint Management Concentration',
+                'detail': f"{top_manager} is the primary sprint manager for {top_count}/{total_managed} items "
+                          f"({top_count/total_managed:.0%}). Heavy concentration creates a single point of failure "
+                          f"for sprint administration.",
+                'items': [],
+                'severity': 'info',
+            })
+
+    # 7. Unassigned items in sprint
+    unassigned = [i for i in items if i['assignee'] in ('(Unassigned)', '', 'Unassigned', None)]
+    if unassigned:
+        observations.append({
+            'title': 'Unassigned Sprint Items',
+            'detail': f"{len(unassigned)} items in the sprint have no assignee. "
+                      f"Unowned work is unlikely to be completed and signals planning gaps.",
+            'items': [i['key'] for i in unassigned[:5]],
+            'severity': 'warning' if len(unassigned) > 2 else 'info',
+        })
+
+    # 8. Status regression (items moving backward in workflow)
+    regressed = []
+    for item in items:
+        edata = enrichment.get(item['key'], {})
+        changelog = edata.get('changelog_summary', '')
+        # Look for backward status moves
+        if re.search(r'In Progress\s*(?:->|→|to)\s*(?:New|Backlog|To Do)', changelog, re.IGNORECASE):
+            regressed.append(item['key'])
+        elif re.search(r'Review\s*(?:->|→|to)\s*(?:In Progress|New)', changelog, re.IGNORECASE):
+            regressed.append(item['key'])
+    if regressed:
+        observations.append({
+            'title': 'Status Regression',
+            'detail': f"{len(regressed)} items moved backward in the workflow (e.g., In Progress back to New). "
+                      f"This suggests blocked work, scope changes, or premature status advancement.",
+            'items': regressed[:5],
+            'severity': 'warning',
+        })
+
+    # 9. Resolve-reopen cycles
+    reopened = []
+    for item in items:
+        edata = enrichment.get(item['key'], {})
+        changelog = edata.get('changelog_summary', '')
+        if re.search(r'(?:Closed|Done|Resolved)\s*(?:->|→|to)\s*(?:Reopened|In Progress|New|Open)', changelog, re.IGNORECASE):
+            reopened.append(item['key'])
+    if reopened:
+        observations.append({
+            'title': 'Resolve-Reopen Cycles',
+            'detail': f"{len(reopened)} items were resolved and then reopened. "
+                      f"This may indicate incomplete work, missed requirements, or quality issues.",
+            'items': reopened[:5],
+            'severity': 'warning',
+        })
+
+    return observations
+
+
+# ---------------------------------------------------------------------------
 # Report Generation -- Markdown
 # ---------------------------------------------------------------------------
 
-def generate_markdown(team_name, sprint_name, sprint_num, items, metrics, antipatterns, enrichment=None):
+def generate_markdown(team_name, sprint_name, sprint_num, items, metrics, antipatterns, enrichment=None, observations=None):
     """Generate the full markdown sprint health report."""
     if enrichment is None:
         enrichment = {}
@@ -1724,6 +1916,24 @@ def generate_markdown(team_name, sprint_name, sprint_num, items, metrics, antipa
     w("- **Dependency check:** Items blocked by external teams enter only when unblocked.")
     w()
 
+    # --- 9. Additional Observations ---
+    if observations:
+        w("---")
+        w()
+        w("## 9. Additional Observations")
+        w()
+        w("The following patterns were detected from enrichment data (changelogs, comments, sprint history) and may warrant discussion.")
+        w()
+        for obs in observations:
+            severity_icon = {"warning": "**[!]**", "info": "[i]"}.get(obs['severity'], "")
+            w(f"### {severity_icon} {obs['title']}")
+            w()
+            w(obs['detail'])
+            if obs.get('items'):
+                w()
+                w("Affected items: " + ", ".join(obs['items']))
+            w()
+
     # --- Appendix ---
     w("---")
     w()
@@ -2055,7 +2265,7 @@ def generate_trend_section(history):
 # Report Generation -- HTML
 # ---------------------------------------------------------------------------
 
-def generate_html(team_name, sprint_name, sprint_num, items, metrics, antipatterns, enrichment=None, jira_base_url=None, history=None):
+def generate_html(team_name, sprint_name, sprint_num, items, metrics, antipatterns, enrichment=None, jira_base_url=None, history=None, observations=None):
     """Generate the full styled HTML sprint health report."""
     if enrichment is None:
         enrichment = {}
@@ -2890,6 +3100,7 @@ def generate_html(team_name, sprint_name, sprint_num, items, metrics, antipatter
     <a href="#section-6">Backlog Improvement</a>
     <a href="#section-7">Top Actions</a>
     <a href="#section-8">Coaching Notes</a>
+    {'<a href="#section-9">Observations</a>' if observations else ''}
     <a href="#section-appendix">Item Tracker</a>
   </nav>
 </div>
@@ -3612,6 +3823,38 @@ def generate_html(team_name, sprint_name, sprint_num, items, metrics, antipatter
   </div>
 </div>
 
+'''
+
+    # --- 9. Additional Observations (HTML) ---
+    if observations:
+        html += '''
+<!-- 9. Additional Observations -->
+<div class="section" id="section-9">
+  <div class="section-number">Section 9</div>
+  <h2>Additional Observations</h2>
+  <p style="color:#64748b; margin-bottom:1.5rem;">The following patterns were detected from enrichment data (changelogs, comments, sprint history) and may warrant discussion.</p>
+'''
+        for obs in observations:
+            sev_color = '#f59e0b' if obs['severity'] == 'warning' else '#3b82f6'
+            sev_label = 'Warning' if obs['severity'] == 'warning' else 'Info'
+            sev_bg = '#fef3c7' if obs['severity'] == 'warning' else '#dbeafe'
+            items_html = ''
+            if obs.get('items'):
+                item_links = ', '.join(_issue_link(k) for k in obs['items'])
+                items_html = f'<p style="margin-top:0.5rem;font-size:0.85rem;color:#64748b;">Affected: {item_links}</p>'
+            html += f'''
+  <div style="border-left:4px solid {sev_color}; background:{sev_bg}; padding:1rem 1.25rem; border-radius:8px; margin-bottom:1rem;">
+    <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.5rem;">
+      <span style="background:{sev_color}; color:white; font-size:0.7rem; padding:2px 8px; border-radius:4px; font-weight:600;">{sev_label}</span>
+      <strong>{obs['title']}</strong>
+    </div>
+    <p style="margin:0; color:#334155;">{obs['detail']}</p>
+    {items_html}
+  </div>
+'''
+        html += '</div>\n'
+
+    html += '''
 <!-- Appendix -->
 <div class="section" id="section-appendix">
   <div class="section-number">Appendix</div>
@@ -3873,6 +4116,9 @@ Examples:
     # Detect anti-patterns
     antipatterns = detect_antipatterns(items, metrics, enrichment)
 
+    # Detect additional observations
+    observations = detect_observations(items, metrics, enrichment)
+
     # Load/save sprint history for trend charts
     history = load_history(args.history) if args.history else []
     if args.history:
@@ -3896,7 +4142,7 @@ Examples:
     safe_name = re.sub(r'[^\w\s-]', '', sprint_num or 'Sprint').replace(' ', '_')
 
     # Markdown
-    md_content = generate_markdown(team_name, sprint_name, sprint_num, items, metrics, antipatterns, enrichment)
+    md_content = generate_markdown(team_name, sprint_name, sprint_num, items, metrics, antipatterns, enrichment, observations=observations)
     md_path = os.path.join(args.output, f'{safe_name}_Health_Report.md')
     with open(md_path, 'w') as f:
         f.write(md_content)
@@ -3904,7 +4150,7 @@ Examples:
 
     # HTML
     html_content = generate_html(team_name, sprint_name, sprint_num, items, metrics, antipatterns, enrichment,
-                                  jira_base_url=jira_base_url, history=history)
+                                  jira_base_url=jira_base_url, history=history, observations=observations)
     html_path = os.path.join(args.output, f'{safe_name}_Health_Report.html')
     with open(html_path, 'w') as f:
         f.write(html_content)
@@ -3916,6 +4162,7 @@ Examples:
     print(f"Delivery Rate: {metrics['delivery_rate']:.0%} ({metrics['done_points']:.0f}/{metrics['total_points']:.0f} pts)")
     print(f"Items: {metrics['done_items']}/{metrics['total_items']} completed")
     print(f"Anti-Patterns: {len(antipatterns)} detected")
+    print(f"Observations: {len(observations)} additional patterns found")
     print(f"Zombies: {len(metrics['zombies'])} items")
     print(f"AC Coverage: {metrics['ac_field_rate']:.0%}")
     print(f"Avg Cycle Time: {metrics['avg_cycle_time']:.1f}d")
